@@ -1,0 +1,9 @@
+{
+  "name": "teamwork-task-test",
+  "version": "1.0.0",
+  "description": "Fetch a Teamwork.com task or whole tasklist by URL, extract acceptance criteria, and verify each criterion against the current repository — by running existing Pest / PHPUnit / Dusk / Cypress / Playwright / Vitest / Jest / Selenium tests where possible, by driving a real browser via the chrome-devtools MCP for visual checks, and by writing concrete manual scenarios for everything that cannot be automated. Outputs a per-task report where every acceptance criterion is individually marked as ✅ verified / ⚠️ partial / ❌ failed / 📋 manual / 📝 proposed. Read-only against Teamwork by default — never moves the task or posts comments unless the user opts in. Shares the API token config with the `teamwork-task` plugin so setup is one-time.",
+  "author": {
+    "name": "Stanislav Červeňák",
+    "email": "info@wame.sk"
+  }
+}

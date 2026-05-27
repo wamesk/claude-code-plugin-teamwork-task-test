@@ -1,0 +1,45 @@
+{
+  "teamwork": {
+    "base_url": "https://<workspace>.teamwork.com",
+    "api_token": ""
+  },
+  "default_language": "sk",
+
+  "test_skill": {
+    "run_tests": "auto",
+    "visual_mode": "auto",
+    "comment_on_task": false,
+    "time_log": true,
+    "move_on_pass": "",
+    "move_on_fail": "",
+    "report_language": "sk",
+    "suggest_missing_acceptance_criteria": true,
+
+    "test_runners": {
+      "php_unit": "auto",
+      "php_browser": "auto",
+      "js_unit": "auto",
+      "js_browser": "auto"
+    },
+
+    "test_globs": [
+      "tests/**/*Test.php",
+      "tests/**/*Spec.php",
+      "tests/**/*.test.{ts,tsx,js,jsx,mjs,cjs}",
+      "tests/**/*.spec.{ts,tsx,js,jsx,mjs,cjs}",
+      "cypress/e2e/**/*.cy.{ts,tsx,js,jsx}",
+      "tests/Browser/**/*.php",
+      "tests/e2e/**/*.{ts,tsx,js}",
+      "playwright/**/*.spec.{ts,tsx,js}",
+      "e2e/**/*.{spec,test}.{ts,tsx,js}"
+    ],
+
+    "visual_file_patterns": [
+      "\\.(vue|jsx|tsx|svelte|blade\\.php|html)$",
+      "^resources/views/"
+    ],
+
+    "max_browser_steps": 25,
+    "report_output_dir": "./.teamwork-task-test"
+  }
+}
