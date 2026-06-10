@@ -5,6 +5,19 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-06-10
+
+### Fixed
+
+- Documented the **TIMEZONE CONTRACT** for QA time logs in Step 9.1. The cursor
+  logic reused from `teamwork-task` must parse Teamwork's UTC `timeLogged` with
+  `date -ju` (the `-u` is mandatory on macOS — the trailing `Z` is a literal,
+  not a zone directive) but format the POST `time` field in **local** time
+  (`date -r`, no `-u`), because Teamwork interprets the posted `time` in the
+  user's local/profile timezone. Mixing the two shifted QA entries by the local
+  offset, landing them hours early and overlapping the implementation entries.
+  Includes the `PATCH …/time/{id}.json` recipe to correct a misplaced entry.
+
 ## [1.0.0] — 2026-05-27
 
 ### Added

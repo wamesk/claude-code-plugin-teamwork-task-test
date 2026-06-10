@@ -446,6 +446,16 @@ By default this skill is **read-only** against Teamwork. Two opt-in write-backs:
 
 If `config.test_skill.time_log == true` (default) **and** the user did not pass `--time-log=false`, log a single time entry per task with the elapsed QA time. Reuse the **same sequential, non-overlapping cursor** logic as the `teamwork-task` plugin (Step 5.5 / 6.8 there) — the cursor lives in `SESSION_CURSOR_TS` and advances by exactly the logged duration after each successful POST. This is critical: a user who runs `/teamwork-task` and `/teamwork-task-test` back-to-back must not get overlapping timesheet rows.
 
+> **TIMEZONE CONTRACT (critical).** Teamwork's time API is asymmetric: `GET …/time.json`
+> returns `timeLogged` in **UTC** (trailing `Z`), but the **POST/PATCH `time` field is
+> interpreted in the user's LOCAL/profile timezone**. When you reuse the `teamwork-task`
+> cursor logic, parse `timeLogged` as UTC (`date -ju -f "…Z"` — the `-u` is mandatory on
+> macOS, the trailing `Z` is a literal, not a zone directive) but format the POST `time`
+> in LOCAL (`date -r "$TS" +%H:%M:%S`, **no** `-u`). Mixing them up shifts every QA entry
+> by the local offset, so logs land hours early and overlap the implementation entries.
+> If you ever need to correct a misplaced entry, `PATCH …/projects/api/v3/time/{id}.json`
+> with `{"timelog":{"time":"HH:MM:SS"}}` (local time).
+
 Description tone: business, in `config.test_skill.report_language` (default `sk`). Examples (Slovak):
 - *"Otestované akceptačné kritériá pre modul Faktúry — 6/7 splnených, 1 manuálny scenár."*
 - *"QA pas pre Stornovať akciu — všetky AC overené Pestom."*
