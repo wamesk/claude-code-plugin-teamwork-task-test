@@ -5,6 +5,34 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] — 2026-06-11
+
+### Fixed
+
+- **URL parser broken on macOS/BSD sed (Step 1).** `ENTITY_ID` and `URL_KIND`
+  used `|` as both the `s` delimiter and the `(tasks|tasklists)` alternation,
+  so BSD/macOS `sed` aborted with `RE error: parentheses not balanced` and both
+  values came back empty for every URL — breaking the whole skill on macOS.
+  Switched the `s` delimiter to `#` on both lines (regex unchanged); a `tasks`
+  URL now yields the numeric id and `task` as expected.
+- **Shell injection via grepped test names (Step 6.2).** Test names extracted
+  from test files were interpolated into double-quoted runner arguments
+  (`--filter "…"`, `-g "…"`, `-t "…"`, `--testNamePattern "…"`). A name
+  containing a double quote plus `$(…)` or backticks broke out of the quoting
+  and executed arbitrary shell. The name (and the file path) are now passed as
+  `printf %q`-escaped, single-quoted-safe literals.
+- **`jq` aborting on Teamwork control characters (Steps 3–4).** Raw curl JSON
+  was piped straight into `jq`, which dies on Teamwork's unescaped control
+  characters (`control characters U+0000–U+001F must be escaped`) — a single
+  pasted control byte killed the run. Documented a tolerant sanitize step
+  (`python3 json.loads(strict=False)` re-emit, or pre-stripping the control
+  bytes with `tr`) applied to every Teamwork response before parsing.
+
+### Changed
+
+- Removed the `version:` field from the SKILL.md YAML frontmatter — `plugin.json`
+  is now the single source of truth for the plugin version.
+
 ## [1.0.1] — 2026-06-10
 
 ### Fixed

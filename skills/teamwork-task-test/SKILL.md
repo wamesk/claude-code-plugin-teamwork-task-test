@@ -1,6 +1,5 @@
 ---
 name: teamwork-task-test
-version: 1.0.1
 description: "Use when the user provides a Teamwork.com URL (single task or tasklist) and asks to 'test these tasks', 'otestuj tasky z teamworku', 'preveruj zadanie', 'skontroluj akceptačné kritériá', 'spusti testy pre tasky', or invokes '/teamwork-task-test'. Fetches tasks via the Teamwork REST API v3 (reusing the shared config/token from the `teamwork-task` plugin), parses acceptance criteria from the task description, detects the project's test stack (Pest, PHPUnit, Laravel Dusk, Cypress, Playwright, Selenium, Vitest, Jest), tries to map criteria onto existing tests and run them, optionally drives a real browser via the chrome-devtools MCP for visual verification, and writes a per-task report with each acceptance criterion individually marked as ✅ verified by test / ⚠️ partial / ❌ failed / 📋 manual / 📝 missing-or-proposed. Never modifies the Teamwork task or board by default — read-only and idempotent unless the user explicitly opts into commenting or board moves. Always use this skill when the user wants to verify or QA work captured in a Teamwork task without having to write or run the tests by hand themselves."
 argument-hint: "<teamwork-url> [--run-tests=auto|never|always] [--visual=auto|browser|skip] [--comment-on-task=true|false] [--time-log=true|false] [--language=sk|en]"
 allowed-tools: [Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion, WebFetch]
@@ -55,8 +54,8 @@ Identical parser to the `teamwork-task` plugin:
 ```bash
 URL="<the url>"
 WORKSPACE=$(echo "$URL"   | sed -nE 's|https?://([^.]+)\.teamwork\.com/.*|\1|p')
-ENTITY_ID=$(echo "$URL"   | sed -nE 's|.*/(tasks|tasklists)/([0-9]+).*|\2|p')
-URL_KIND=$(echo "$URL"    | sed -nE 's|.*/(tasks|tasklists)/[0-9]+.*|\1|p' | sed 's/s$//')
+ENTITY_ID=$(echo "$URL"   | sed -nE 's#.*/(tasks|tasklists)/([0-9]+).*#\2#p')
+URL_KIND=$(echo "$URL"    | sed -nE 's#.*/(tasks|tasklists)/[0-9]+.*#\1#p' | sed 's/s$//')
 BASE_URL="https://${WORKSPACE}.teamwork.com"
 ```
 
@@ -170,6 +169,36 @@ curl -sS -u "$AUTH" -H "Accept: application/json" \
 ```
 
 If a fetch returns HTTP 401 → token invalid; re-prompt the user (re-run Step 2's first-run flow). 403/404 → report and stop.
+
+> **TOLERANT-PARSE CONTRACT (critical).** Teamwork's WYSIWYG routinely emits raw
+> control characters (U+0000–U+001F — stray `\t`, vertical tabs, lone `\r`, form
+> feeds pasted from Word) **inside** the JSON string values. Strict `jq` aborts
+> the whole run on the first one with `Invalid string: control characters from
+> U+0000 through U+001F must be escaped`. **Never pipe the raw curl body straight
+> into `jq`.** Sanitize first. Two equivalent ways — pick one and apply it to
+> every Teamwork response before parsing:
+>
+> ```bash
+> # (a) tolerant Python — re-emits valid, strictly-escaped JSON for jq to consume
+> RAW=$(curl -sS -u "$AUTH" -H "Accept: application/json" "$URL")
+> CLEAN=$(printf '%s' "$RAW" | python3 -c 'import sys,json; json.dump(json.loads(sys.stdin.read(), strict=False), sys.stdout)')
+> echo "$CLEAN" | jq -r '.task.name'
+> ```
+>
+> ```bash
+> # (b) lossy fallback: translate the offending control bytes to spaces before jq
+> #     range = all controls 0x00–0x1F (incl. raw TAB 0x09) — jq rejects every one
+> #     of them inside a string, so none may survive.
+> CLEAN=$(printf '%s' "$RAW" | tr '\000-\037' ' ')
+> echo "$CLEAN" | jq -r '.task.name'
+> ```
+>
+> Prefer (a) — `json.loads(strict=False)` tolerates the unescaped control chars
+> and `json.dump` re-escapes them losslessly, so no description text is dropped.
+> Fall back to (b) only when `python3` is unavailable; note it is **lossy**
+> (collapses the offending bytes to spaces) and must strip the *whole* 0x00–0x1F
+> range — leaving a raw TAB behind still trips `jq`. Apply the same sanitize to
+> the comments fetch above. A single pasted control char must never kill the run.
 
 ---
 
@@ -298,17 +327,37 @@ If `config.test_skill.run_tests == "never"` → skip execution, fall straight th
 
 ### 6.2 Execute candidate tests
 
-Pick the highest-scoring candidate. Decide the runner:
+Pick the highest-scoring candidate. Decide the runner.
+
+> **SHELL-SAFETY CONTRACT (critical).** The `<test name>` is grepped verbatim
+> from the test file and is fully attacker/author-controlled. **Never** splice
+> it into a double-quoted argument (`--filter "<test name>"`): a name containing
+> a double quote followed by `$(…)` or backticks closes the quote and executes
+> arbitrary shell. Always pass it as a **single-quoted, escaped** literal.
+> Build the escaped form once with `printf %q` (or wrap in single quotes and
+> escape embedded single quotes) and interpolate that, e.g.:
+>
+> ```bash
+> TEST_NAME='it sends "$(rm -rf ~)" mail'      # whatever was grepped, verbatim
+> Q=$(printf '%q' "$TEST_NAME")                # shell-safe, no eval surface
+> ./vendor/bin/pest --filter "$Q"              # $Q already fully escaped
+> ```
+>
+> In the runner table below, every `<test name>` / `<file>` placeholder MUST be
+> substituted with such a `printf %q`-escaped value, not the raw string.
 
 | Test file path                                  | Runner command (default — override via `test_runners.*` config)        |
 | ----------------------------------------------- | ---------------------------------------------------------------------- |
-| `tests/Feature/…` / `tests/Unit/…` (Pest)       | `./vendor/bin/pest --filter "<test name>"`                              |
-| `tests/Feature/…` / `tests/Unit/…` (PHPUnit)    | `./vendor/bin/phpunit --filter "<test name>"`                           |
-| `tests/Browser/…` (Laravel Dusk)                | `php artisan dusk --filter "<test name>"`                               |
-| `cypress/e2e/…`                                 | `npx cypress run --spec "<file>" --headless`                            |
-| `tests/e2e/…` / `playwright/…` (Playwright)     | `npx playwright test "<file>" -g "<test name>"`                         |
-| `tests/**/*.{test,spec}.{ts,js,tsx,jsx}` (Vitest) | `npx vitest run -t "<test name>" "<file>"`                              |
-| Same path family but project uses Jest          | `npx jest --testNamePattern "<test name>" "<file>"`                     |
+| `tests/Feature/…` / `tests/Unit/…` (Pest)       | `./vendor/bin/pest --filter "$Q"`                                      |
+| `tests/Feature/…` / `tests/Unit/…` (PHPUnit)    | `./vendor/bin/phpunit --filter "$Q"`                                   |
+| `tests/Browser/…` (Laravel Dusk)                | `php artisan dusk --filter "$Q"`                                       |
+| `cypress/e2e/…`                                 | `npx cypress run --spec "$QFILE" --headless`                           |
+| `tests/e2e/…` / `playwright/…` (Playwright)     | `npx playwright test "$QFILE" -g "$Q"`                                 |
+| `tests/**/*.{test,spec}.{ts,js,tsx,jsx}` (Vitest) | `npx vitest run -t "$Q" "$QFILE"`                                      |
+| Same path family but project uses Jest          | `npx jest --testNamePattern "$Q" "$QFILE"`                             |
+
+where `Q=$(printf '%q' "$TEST_NAME")` and `QFILE=$(printf '%q' "$TEST_FILE")` are
+pre-escaped once before the runner is invoked.
 
 Choose Pest over PHPUnit if `HAS_PEST=1`. Choose Vitest over Jest if both are present. If `test_runners.<lang>_*` overrides the default, honour that.
 
