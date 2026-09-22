@@ -5,6 +5,79 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-09-22
+
+### Added
+
+- **Four cross-cutting review dimensions (new Step 6.6).** A QA pass used to
+  answer only the question the task author thought to ask. It now also reviews
+  the task's own diff for **UI/UX & accessibility**, **performance**,
+  **security** and **reachability**, and reports those findings in their own
+  severity-tagged table, separate from the acceptance-criteria table. Pick a
+  subset with `--dimensions=ui_ux,security` or turn them off with
+  `--dimensions=none`. A dimension that could not run is named in the report:
+  a silently skipped dimension reads as a clean bill of health, which is the one
+  thing it must never do.
+  - *UI/UX* covers the checks that are invisible in a screenshot: a disabled
+    control must carry `aria-disabled` **and** a reason, every interactive
+    element needs an accessible name, and every new translation key must resolve
+    to text rather than to itself — the silent failure where a framework walks a
+    dotted key segment by segment, finds a string at the prefix, and renders the
+    raw key.
+  - *Performance* compares real LCP / CLS / INP / TTFB against configurable
+    budgets and reads the diff for the patterns that only hurt at scale (N+1, an
+    unchunked batch, a full table walked in PHP) — stating the row count at which
+    each one starts to matter, and whether the breach is caused by this change or
+    predates it.
+  - *Security* covers authorization and tenant isolation on new routes, mass
+    assignment, injection through author-controlled strings, secrets, and
+    unhandled error paths on reachable routes. It also names the trap that a
+    nicely-worded exception message is shown to the user as a generic 500 once
+    `APP_DEBUG=false`, so a named exception helps the log, not the screen.
+  - *Reachability* answers the question acceptance criteria almost never ask: is
+    every registered screen reachable by **clicking**? It enumerates screens from
+    the filesystem, collects the live menu links from the rendered navigation,
+    subtracts the ones reachable through a parent's relation tab, and reports
+    what is left as findable only by typing the URL. `allow_orphans` is the
+    escape hatch for deliberate URL-only pages.
+- **Negative control for every green test (new Step 6.5.5).** A passing test is
+  not evidence until it has been seen to fail. For each criterion verified by a
+  test written or changed for the task, the skill applies the smallest possible
+  revert of the fix, confirms the test goes red, then restores from a backup kept
+  **outside** the repository. A test that passes with and without the fix gets
+  its criterion **downgraded to ⚠️ partial** — that case is the single most
+  common way a QA report lies. Restoring the file is a hard requirement, verified
+  with `git status --porcelain`; a dirty tree left behind is a blocker, not a
+  warning. Disable with `--negative-control=false`.
+- **Ticking met acceptance criteria in the Teamwork description (new Step 9.3).**
+  Criteria that ended ✅ get their `- [ ]` flipped to `- [x]`. Only ✅ is ticked —
+  a checklist that claims more than was proven is worse than one nobody filled
+  in. On by default; disable with `--tick-ac=false`.
+  The rewrite is bounded by a **byte-exact safety contract**, because a Teamwork
+  description holds things that no diff of the rendered view shows: an inline
+  image is *not* an attachment, it lives only as a link in the markdown, so a
+  rewrite that drops it deletes the screenshot with no copy to restore from.
+  Regenerating the description from a parsed model is therefore forbidden. The
+  only legal edit is the six characters of a checkbox, and the skill must prove
+  that before sending — length unchanged, asset markers unchanged, and with all
+  checkboxes normalised the two texts identical. The round trip is re-fetched and
+  compared, because Teamwork's WYSIWYG has been known to rewrite a submitted
+  body, so HTTP 200 is not evidence. Any failed assertion stops the write instead
+  of retrying with a different body.
+
+### Changed
+
+- The skill's stated contract is now "read-only for anything destructive". Two
+  writes happen by default: the time log (as before) and the acceptance-criteria
+  ticks (new, and provably minimal). Board moves, comments and task completion
+  remain opt-in.
+- `ac.json` gained `review_findings`, `dimensions_run` and `dimensions_skipped`.
+  The last two are what make an empty findings array meaningful — without them,
+  "no findings" and "nobody looked" are indistinguishable to whatever reads the
+  file next. Test evidence gained a `negative_control` field.
+- The per-task report gained two sections: the review-findings table and a
+  negative-control table.
+
 ## [1.0.2] — 2026-06-11
 
 ### Fixed

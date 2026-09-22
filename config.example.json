@@ -4,7 +4,6 @@
     "api_token": ""
   },
   "default_language": "sk",
-
   "test_skill": {
     "run_tests": "auto",
     "visual_mode": "auto",
@@ -14,14 +13,12 @@
     "move_on_fail": "",
     "report_language": "sk",
     "suggest_missing_acceptance_criteria": true,
-
     "test_runners": {
       "php_unit": "auto",
       "php_browser": "auto",
       "js_unit": "auto",
       "js_browser": "auto"
     },
-
     "test_globs": [
       "tests/**/*Test.php",
       "tests/**/*Spec.php",
@@ -33,13 +30,53 @@
       "playwright/**/*.spec.{ts,tsx,js}",
       "e2e/**/*.{spec,test}.{ts,tsx,js}"
     ],
-
     "visual_file_patterns": [
       "\\.(vue|jsx|tsx|svelte|blade\\.php|html)$",
       "^resources/views/"
     ],
-
     "max_browser_steps": 25,
-    "report_output_dir": "./.teamwork-task-test"
+    "report_output_dir": "./.teamwork-task-test",
+    "review_dimensions": [
+      "ui_ux",
+      "performance",
+      "security",
+      "reachability"
+    ],
+    "negative_control": true,
+    "tick_acceptance_criteria": true,
+    "performance_budgets": {
+      "lcp_ms": 2500,
+      "cls": 0.1,
+      "inp_ms": 200,
+      "ttfb_ms": 800
+    },
+    "reachability": {
+      "enabled": true,
+      "menu_selector_hint": "nav a[href]",
+      "screen_globs": [
+        "app/Nova/**/*.php",
+        "app/Filament/**/Resources/*.php",
+        "resources/js/Pages/**/*.{vue,tsx,jsx}",
+        "src/pages/**/*.{tsx,jsx,vue}",
+        "src/app/**/page.{tsx,jsx}"
+      ],
+      "relation_field_markers": [
+        "HasMany",
+        "HasManyThrough",
+        "BelongsToMany",
+        "MorphMany",
+        "HasOne",
+        "MorphToMany"
+      ],
+      "allow_orphans": []
+    },
+    "a11y_checks": [
+      "disabled_control_has_reason",
+      "disabled_control_is_announced",
+      "interactive_element_has_accessible_name",
+      "translation_key_resolves_to_text",
+      "form_control_has_label",
+      "image_has_alt"
+    ]
   }
 }
