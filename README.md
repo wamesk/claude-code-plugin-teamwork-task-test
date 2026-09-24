@@ -43,11 +43,20 @@ the same file.
 
 1. **Parses the URL** — single task or tasklist, any of Teamwork's common URL shapes.
 2. **Loads the shared config**, prompts for a token only on first run.
-3. **Fetches the task(s)** via Teamwork REST API v3. Pulls comments when the
-   task has any — the freshest AC often live in the last comment.
-4. **Parses the description** on the first horizontal rule into
-   `acceptance_criteria` (above) and `final_summary` (below). Extracts each
-   AC as an individual item (HTML `<li>`, markdown bullets, checkboxes, …).
+3. **Fetches the task(s)** via Teamwork REST API v3 and **always pulls the
+   comments** in chronological order — the freshest AC often live in the last
+   comment *(1.2.0: there is no comment-count gate any more, because v3 never
+   returns a count to gate on)*. Falls back to the classic v1 comments endpoint
+   when v3 refuses, and reports "comments unavailable" rather than "no comments"
+   when both fail. Every request's HTTP status is checked, so a failed fetch is
+   visible instead of silently empty.
+4. **Parses the description** into `acceptance_criteria` and
+   `final_summary`: in the canonical WAME format (an `## Akceptačné kritériá` /
+   `## Acceptance criteria` heading, as the sibling plugins write it) the
+   criteria are the block from that heading to the next horizontal rule,
+   `### Prierezové požiadavky` included; otherwise the description is split on
+   the first horizontal rule (above / below). Extracts each AC as an individual
+   item (HTML `<li>`, markdown bullets, checkboxes, …).
 5. **If acceptance criteria are missing or thin**, drafts 3–6 from the title
    + final summary + freshest comments, marks them as `suggested`, and asks
    you to approve / edit / skip before testing.
@@ -71,23 +80,28 @@ the same file.
 10. **Reviews four cross-cutting dimensions** over the task's own diff *(1.1.0)*
     — **UI/UX & accessibility**, **performance**, **security**,
     **reachability** — and reports those findings separately from the AC table.
-    This is the half of QA that acceptance criteria never ask for.
+    This is the half of QA that acceptance criteria never ask for. A fifth,
+    **framework best practices** *(1.2.0)*, is advisory: it only *recommends*
+    the current idioms of the framework versions the project has installed, in a
+    section of its own, and never changes code or a verdict.
 11. **Renders a per-task report** with a status table for every AC and the
     evidence linked next to it (test file:line, runner, screenshot path, or
-    manual scenario reference), plus the findings and negative-control tables.
+    manual scenario reference), plus the findings table, the framework
+    recommendations and the negative-control table.
 12. **Tasklist run** also produces a final summary table over all tasks.
 13. **Ticks the met criteria** to `- [x]` in the Teamwork description *(1.1.0,
     default ON)* under a byte-exact safety contract, **logs time** (default ON,
     sequential and non-overlapping like the `teamwork-task` plugin) and
     **optionally posts the report as a comment** (default OFF).
 
-## The four review dimensions *(1.1.0)*
+## The review dimensions *(1.1.0, framework 1.2.0)*
 
 Acceptance criteria describe what the author thought to ask for. They are quiet
 about the greyed-out button that gives no reason, the page nobody can reach, the
 query that runs once per row, and the crafted request that answers 500. So every
 run also reviews the task's diff along four axes and reports what it finds with a
-severity and a file:line — never as a vague worry.
+severity and a file:line — never as a vague worry. A fifth axis, `framework`,
+only recommends (see below).
 
 | Dimension | What it actually checks |
 |---|---|
@@ -95,10 +109,28 @@ severity and a file:line — never as a vague worry.
 | **Performance** | Real LCP / CLS / INP / TTFB against configurable budgets, plus the diff read for what only hurts at scale: N+1, an unchunked batch, a table walked in PHP where a `WHERE` would do. Every finding names the row count at which it starts to matter, and says whether this change caused it or walked past it. |
 | **Security** | Authorization and tenant isolation on new routes, object-scoped checks vs. role-only checks (IDOR), mass assignment, injection through author-controlled strings, secrets, and unhandled error paths on reachable routes. Notes that with `APP_DEBUG=false` a well-worded exception reaches the user as a generic 500 — so a named exception helps the log, not the screen. |
 | **Reachability** | Is every registered screen reachable **by clicking**? Screens are enumerated from the filesystem, menu links are read from the live rendered navigation, and screens reachable through a parent's relation tab are subtracted. What is left is findable only by typing the URL — which means findable by nobody. `allow_orphans` covers deliberate URL-only pages. |
+| **Framework** *(advisory, 1.2.0)* | Does the diff use the idioms and built-in features of the versions **actually installed** (read from `composer.lock`, `node_modules`, browserslist — never assumed), or does it hand-roll something the framework ships, or use a pattern that version replaced? Checked against current docs (Laravel Boost `search-docs`, else context7, else the official docs). **Recommendations only** — see below. |
 
 Scope them per run with `--dimensions=ui_ux,security` or switch them off with
 `--dimensions=none`. A dimension that could not run is named in the report,
 because a silently skipped dimension reads as a clean bill of health.
+
+### Framework recommendations are advisory
+
+A tester does not modernize working code. The `framework` dimension therefore
+only **recommends**: it never edits a file, never applies a suggestion, never
+downgrades or fails a criterion, never blocks, and never counts toward the task
+status or the tasklist totals. Each recommendation points at a line of the
+task's own diff and names the installed version, the concrete replacement that
+version offers and the docs page checked — *"could be more modern"* without that
+is not a recommendation, and neither is anything that contradicts the project's
+`CLAUDE.md` or its sibling code. At most 5 per task (the report says how many
+were dropped), rendered as **"Odporúčania — framework best practices"**, phrased
+as optional suggestions for a future refactor task.
+
+One exception is a real finding, not a recommendation: a feature **newer than
+the installed version or the browserslist target** will not run, so it is
+reported under `ui_ux`, `performance` or `security` with a real severity.
 
 ## Example output
 
@@ -121,6 +153,14 @@ because a silently skipped dimension reads as a clean bill of health.
 |--------|-----|-------|-----|----------------|
 | UI/UX | 🟠 medium | Neaktívne tlačidlo nehovorí prečo — `<span>` bez `aria-disabled` aj bez `title` | `resources/views/nova/invoice/buttons-card.blade.php:41` | áno → opravené |
 | Reachability | 🟡 low | `Country` je registrovaná obrazovka, nevedie na ňu odkaz ani relačný tab | `app/Nova/Country.php` | nie — staršie |
+
+#### Odporúčania — framework best practices (len odporúčania)
+
+Nainštalované: Laravel v12.28.1 · PHP ^8.3 · Vue 3.5.13
+
+| # | Kde | Teraz | Zvážiť pri najbližšom refaktoringu | Zdroj |
+|---|-----|-------|------------------------------------|-------|
+| 1 | `app/Models/Invoice.php:34` | `match` nad textovými stavmi | `casts()` + enum cast (Laravel 12) | `laravel.com/docs/12.x/eloquent-mutators#enum-casting` |
 
 #### Negatívne kontroly
 
@@ -170,7 +210,7 @@ It is **shared with the `teamwork-task` plugin**. This plugin only adds the
     "max_browser_steps": 25,
     "report_output_dir": "./.teamwork-task-test",
 
-    "review_dimensions": ["ui_ux", "performance", "security", "reachability"],
+    "review_dimensions": ["ui_ux", "performance", "security", "reachability", "framework"],
     "negative_control": true,
     "tick_acceptance_criteria": true,
     "performance_budgets": { "lcp_ms": 2500, "cls": 0.1, "inp_ms": 200, "ttfb_ms": 800 },
@@ -183,13 +223,20 @@ It is **shared with the `teamwork-task` plugin**. This plugin only adds the
 All `test_skill.*` keys can be temporarily overridden via CLI flags — see
 `SKILL.md` for the full list.
 
+Since 1.2.0 the default `review_dimensions` includes `framework`. An existing
+config is migrated once: `framework` is appended only when the list is still the
+untouched 1.1.x default (`["ui_ux", "performance", "security",
+"reachability"]`); a customised list is left exactly as you wrote it. The
+migration records itself in `test_skill.migrations`, so removing `framework`
+later sticks.
+
 ## CLI flags
 
 | Flag | Values | Default | Notes |
 |------|--------|---------|-------|
 | `--run-tests=` | `auto`, `never`, `always` | `auto` | Whether to actually execute discovered tests. |
 | `--visual=` | `auto`, `browser`, `skip` | `auto` | Use the chrome-devtools MCP for UI-shaped AC. |
-| `--dimensions=` | subset of `ui_ux,performance,security,reachability`, or `none` | all four | Which cross-cutting review dimensions to run. |
+| `--dimensions=` | subset of `ui_ux,performance,security,reachability,framework`, or `none` | all five | Which cross-cutting review dimensions to run. `framework` is advisory — recommendations only. |
 | `--negative-control=` | `true`, `false` | `true` | Revert each fix and confirm its test goes red before trusting it. |
 | `--tick-ac=` | `true`, `false` | `true` | Tick met criteria to `- [x]` in the Teamwork description. |
 | `--comment-on-task=` | `true`, `false` | `false` | Post the per-task report as a Teamwork comment. |
@@ -214,7 +261,11 @@ All `test_skill.*` keys can be temporarily overridden via CLI flags — see
 `ac.json` is grep-friendly and intended for CI integrations. Since 1.1.0 it also
 carries `review_findings`, `dimensions_run` and `dimensions_skipped` — the last
 two are what make an empty findings array meaningful, because without them "no
-findings" and "nobody looked" read the same.
+findings" and "nobody looked" read the same. Since 1.2.0 `review_findings` may
+hold `framework` items with `"severity": "info"`, `"advisory": true` and
+`"fixed": false`, next to `framework_versions` (what was detected) and
+`framework_recommendations_dropped`. A CI gate must skip `advisory: true` items
+when it decides pass / fail.
 
 ## What this plugin will **never** do
 
@@ -229,6 +280,9 @@ findings" and "nobody looked" read the same.
   markdown, so a careless rewrite would delete a screenshot for good.
 - Tick a criterion that was not proven. Only ✅ is ticked; ⚠️ partial, 📋 manual
   and ❌ failed stay open.
+- Modernize working code. A `framework` recommendation is a note for a future
+  refactor task — it is never applied during the run and never changes a
+  verdict.
 - Push to a git remote.
 - Leave your code changed. It **does** edit code during a negative control
   (Step 6.5.5) — that is the point: revert the fix, watch the test fail — but it
@@ -239,6 +293,15 @@ findings" and "nobody looked" read the same.
   [`teamwork-task`](https://github.com/wamesk/claude-code-plugin-teamwork-task).
 - Echo the API token to stdout, into the report files, into the commit
   history, or anywhere it could leak.
+
+## Shell compatibility *(1.2.0)*
+
+The skill's shell snippets run in your login shell — zsh on macOS (that is what
+Claude Code's Bash tool uses), bash elsewhere. `SKILL.md` opens with a short
+**shell portability contract** that every snippet follows. The rule that matters
+most: JSON never goes through `echo`, because zsh's `echo` turns the `\n`
+escapes inside a Teamwork response into raw newlines and `jq` then rejects it.
+Earlier versions blamed Teamwork for those control characters. It was the shell.
 
 ## Relationship to other plugins
 

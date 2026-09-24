@@ -5,6 +5,141 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-09-24
+
+One advisory review dimension and a round of fixes. The fixes come first in
+importance: the count gate, the invalid `orderBy`, the missing `postedAt` field
+and JSON piped through `echo` are four independent defects, each of which let a
+QA run carry on with **no comments** and no error at all. They were reported in
+a colleague's "Štyri cesty k nule" analysis and re-verified with read-only GETs
+against a completed task that has 8 comments. The remaining fixes are the
+`projectId` lookup and the zsh sweep that the same analysis prompted, plus the
+acceptance-criteria block lookup the sibling plugins' new cross-cutting
+criteria depend on.
+
+### Added
+
+- **`framework` — an advisory fifth review dimension (new Step 6.6.5).** The
+  build-side plugins now use the idioms and built-in features of the framework
+  versions a project actually has installed, instead of patterns remembered from
+  older versions. The QA pass reads the task's diff for the same thing, but a
+  tester must not modernize working code, so this dimension only
+  **recommends**:
+  - It never edits a file, never applies a recommendation, never downgrades or
+    fails a criterion, never blocks, and never counts toward `Stav testovania`,
+    the tasklist totals or any pass / fail roll-up. In `ac.json` every item
+    carries `"dimension": "framework"`, `"severity": "info"`, `"fixed": false`
+    and `"advisory": true`, and a CI gate must skip `advisory: true` items.
+  - The versions come from the lock files (`composer.lock`, else
+    `vendor/composer/installed.json`; `node_modules`, else `package-lock.json`;
+    `.browserslistrc` / `browserslist`, `.nvmrc` / `engines`) or from Laravel
+    Boost's `application-info` — never from memory; a bare manifest constraint
+    is printed as one and treated as a floor — and are recorded in
+    `ac.json` as `framework_versions`. The idiom is checked in current docs:
+    Boost `search-docs`, else the context7 MCP, else the official docs. With no
+    docs source reachable the dimension issues no recommendations and says so,
+    because a recommendation from stale model memory is exactly what it exists
+    to avoid.
+  - Each recommendation points at a line of the task's own diff and names the
+    installed version, the concrete replacement that version offers, and the
+    docs page checked. *"Could be more modern"* without such a replacement is
+    not a recommendation, and neither is anything outside the diff or anything
+    that contradicts the project's `CLAUDE.md` or its sibling code's
+    conventions. At most 5 per task; the report says how many were dropped.
+  - The report renders them in their own section, *"Odporúčania — framework
+    best practices"*, after the findings table and phrased as optional
+    suggestions for a future refactor task. The severity legend gains
+    ℹ️ info.
+  - **One exception stays a real finding.** A feature newer than the installed
+    version or the browserslist target (property hooks on PHP 8.2, `defineModel`
+    on Vue 3.3, `:has()` outside the target browsers) will not run, so it is
+    reported as a regular finding under `ui_ux`, `performance` or `security`
+    with a real severity — never under the advisory label, which would hide a
+    defect.
+  - `framework` joins the `--dimensions=` values and the
+    `test_skill.review_dimensions` default. An existing config is migrated once:
+    `framework` is appended only to the untouched 1.1.x default list; a
+    customised list (a subset, another order, `[]`) is left alone. The migration
+    records itself in `test_skill.migrations`, so a user who later removes
+    `framework` on purpose does not get it back on the next run.
+
+### Fixed
+
+- **An explicit `false` in the config was switched back on at every run.**
+  The Step 2.5 migration set boolean defaults with `(.x //= true)`, and jq's
+  `//` treats `false` exactly like a missing key — so `test_skill.time_log`,
+  `suggest_missing_acceptance_criteria`, `negative_control` and
+  `tick_acceptance_criteria` were rewritten from `false` to `true` on every
+  run. Opting out of time logging or of ticking criteria in Teamwork never
+  stuck. Defaults now apply only to a missing / `null` value
+  (`|= if . == null then true else . end`), the same rule teamwork-task 1.5.0
+  uses for the shared config.
+- **Comments were never fetched.** Step 3 fetched them only
+  `If commentsCount > 0`, and v3 task objects have no `commentsCount` key at
+  all, so the gate never opened. Acceptance criteria moved into the last comment
+  were never tested. Comments are now always fetched; it is one cheap GET per
+  task.
+  *Repro:* `jq '.task.commentsCount' <<<"$(curl … /projects/api/v3/tasks/45198800.json)"`
+  → `null` on a task with 8 comments.
+- **The comments request itself was invalid.** `orderBy=postedAt` is answered
+  with **HTTP 400** `orderBy: unknown comment sort.`, the status was not checked,
+  and the error body was read as an empty comment list. The request now uses
+  `orderBy=date&orderMode=asc` (chronological), checks the HTTP status inline,
+  prints a `⚠` naming the endpoint, and falls back to the classic v1 endpoint
+  (`GET /tasks/{id}/comments.json`, sorted by `datetime`) with a field map that
+  normalises it to the v3 names. When both fail, the report says *"comments
+  unavailable"* — never *"no comments"*.
+  *Repro:* `curl -w '%{http_code}' …/tasks/45198800/comments.json?orderBy=postedAt` → `400`.
+- **Wrong comment field names.** A comment's timestamp is `postedDateTime`;
+  there is no `postedAt`. The author is `postedByUserId` (names via
+  `include=users`), the body `htmlBody`, the files `files[]`. "Freshest comment"
+  cannot be picked by a field that does not exist.
+- **`projectId` was read from a key v3 does not return.** The task's project id
+  lives at `.tasklist.meta.projectId`; the skill now reads
+  `.projectId // .tasklist.meta.projectId`. Without it the opt-in board moves
+  (Step 9.4) found no workflow and did nothing. The Step 3 field list now names
+  only keys v3 actually returns (`dueDate`, not `dueAt`; `tagIds`).
+- **The tolerant-parse contract had the wrong diagnosis, and its own snippets
+  re-broke the JSON.** It said Teamwork's WYSIWYG emits raw control characters
+  inside JSON strings. The raw body of the same task parses cleanly with
+  `printf '%s' "$RAW" | jq`, with `jq … <<<"$RAW"`, and with Python's *strict*
+  `json.loads`. The control characters were produced by **zsh's builtin
+  `echo`**, which expands the `\n` escapes inside the JSON — and both recipes in
+  the block ended in `echo "$CLEAN" | jq`, undoing the Python re-escape on the
+  very next line. The block is now the **JSON-through-echo contract**: never
+  pass JSON through `echo`; use a here-string or `printf '%s\n'`.
+  `json.loads(strict=False)` stays as belt-and-braces, its output also passed on
+  through a here-string.
+  *Repro (zsh):* `echo "$RAW" | jq .task.name` → `Invalid string: control
+  characters from U+0000 through U+001F must be escaped`; `jq .task.name <<<"$RAW"`
+  → the task name.
+- **The reachability scan aborted in zsh on projects without `wamesk/`.** The
+  screen enumeration and the relation lookup in Step 6.6.4 used the glob
+  `wamesk/*/src`. An unmatched glob is a hard error in zsh that aborts the whole
+  command list, so the screen list came back empty. Both now grep the
+  directories recursively and filter the paths afterwards.
+  *Repro (zsh, no `wamesk/`):* `{ echo a; grep -rl x wamesk/*/src; echo b; } 2>/dev/null`
+  → prints only `a`.
+- **The byte-exact tick (Step 9.3) did not say how to load the original
+  description.** Through `echo` every escaped newline is rewritten; through
+  `jq -r` a trailing newline is added — either way the length assertion compares
+  against a corrupted original. It is now extracted with `jq -j … <<<"$BODY"`
+  into a file, read with `newline=''`, and the round trip is compared with `cmp`.
+- **Step 4 read the acceptance criteria from the wrong block of a canonical
+  WAME description.** It split on the first HR, but the format the sibling
+  plugins write (`[preamble] → HR → Akceptačné kritériá → HR → Cieľ → …`) puts
+  the reporter's preamble above it — or nothing, when the description starts
+  with the HR — so the preamble was tested as the criteria (or Step 4.2 drafted
+  "missing" ones) while the real criteria, and the `### Prierezové požiadavky`
+  block the sibling plugins now add, were never verified. Step 9.3 already
+  located the block by its heading. When an `## Akceptačné kritériá` /
+  `## Acceptance criteria` heading exists, Step 4 now reads the same block —
+  heading to next HR; other descriptions keep the first-HR split.
+- **A shell portability contract** now opens `SKILL.md` — no JSON through
+  `echo`, inline HTTP checks, no silent `2>/dev/null || echo 0`, no word
+  splitting, `=` not `==`, no `${!…}`, no bare globs — so the next edit does not
+  reintroduce any of the above.
+
 ## [1.1.0] — 2026-09-22
 
 ### Added

@@ -40,7 +40,8 @@
       "ui_ux",
       "performance",
       "security",
-      "reachability"
+      "reachability",
+      "framework"
     ],
     "negative_control": true,
     "tick_acceptance_criteria": true,
