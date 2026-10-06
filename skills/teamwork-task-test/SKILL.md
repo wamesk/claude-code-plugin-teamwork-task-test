@@ -1,7 +1,7 @@
 ---
 name: teamwork-task-test
 description: "Use when the user provides a Teamwork.com URL (single task or tasklist) and asks to 'test these tasks', 'otestuj tasky z teamworku', 'preveruj zadanie', 'skontroluj akceptačné kritériá', 'spusti testy pre tasky', 'skontroluj UI/UX, performance a security', 'over či sú všetky podstránky prístupné', or invokes '/teamwork-task-test'. Fetches tasks via the Teamwork REST API v3 (reusing the shared config/token from the `teamwork-task` plugin), parses acceptance criteria from the task description, detects the project's test stack (Pest, PHPUnit, Laravel Dusk, Cypress, Playwright, Selenium, Vitest, Jest), tries to map criteria onto existing tests and run them, optionally drives a real browser via the chrome-devtools MCP for visual verification, and writes a per-task report with each acceptance criterion individually marked as ✅ verified by test / ⚠️ partial / ❌ failed / 📋 manual / 📝 missing-or-proposed. On top of the stated criteria it always runs four cross-cutting review dimensions over the task's own diff — UI/UX and accessibility, performance, security, and page reachability (every registered screen must be reachable from a menu link or a relation tab, never only by typing the URL) — and reports findings the acceptance criteria never asked about. An advisory fifth dimension, framework best practices, only recommends the idiomatic features of the framework versions the project actually has installed (Laravel, PHP, Nova, Vue, Tailwind, CSS/JS per browserslist) as optional refactor suggestions — it never edits code and never fails a criterion. Proves each passing test is load-bearing with a negative control: revert the fix, watch the test fail, restore. Ticks the `- [ ]` boxes of met acceptance criteria to `- [x]` in the Teamwork description under a byte-exact safety contract that touches nothing else, inline images included. Always use this skill when the user wants to verify or QA work captured in a Teamwork task without having to write or run the tests by hand themselves."
-argument-hint: "<teamwork-url> [--run-tests=auto|never|always] [--visual=auto|browser|skip] [--dimensions=ui_ux,performance,security,reachability,framework] [--negative-control=true|false] [--tick-ac=true|false] [--comment-on-task=true|false] [--time-log=true|false] [--language=sk|en]"
+argument-hint: "<teamwork-url> [--run-tests=auto|never|always] [--visual=auto|browser|skip] [--dimensions=ui_ux,performance,security,reachability,framework] [--negative-control=true|false] [--tick-ac=true|false] [--comment-on-task=true|false] [--time-log=true|false] [--language=sk|en] [--mode=build|harden]"
 allowed-tools: [Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion, WebFetch]
 ---
 
@@ -103,6 +103,7 @@ Optional flags (override config for this run only — not persisted):
 - `--comment-on-task=true|false` — post the final report as a comment on each Teamwork task (default: `false`)
 - `--time-log=true|false` — write a time log to Teamwork for the QA work (default: `true`)
 - `--language=sk|en` — language for the report and any AC suggestions (default: from config, fallback `sk`)
+- `--mode=build|harden` — work mode for this run (default: resolved in Step 2.6 — the project's `.claude/wame-mode.local.md`, then `config.mode`, then `harden`). `build` = `--run-tests=never --visual=skip --dimensions=none --negative-control=false` at once — no test runs, no browser, no review dimensions; `harden` keeps every check as before. An explicit individual flag still wins over the mode.
 
 If `$ARGUMENTS` is empty or contains no URL, ask via **AskUserQuestion** for the URL before doing anything else.
 
@@ -143,7 +144,7 @@ Algorithm:
 4. Validate with `jq . "$CONFIG_FILE" >/dev/null`. If invalid → report and stop.
 5. **First-run check** — if `.teamwork.base_url` or `.teamwork.api_token` are missing/empty/`<workspace>` placeholder, prompt the user via **AskUserQuestion** for both values (prefill `base_url` from the parsed URL). Write them back atomically with `jq` + `mv`, then `chmod 600`.
 6. **Apply config migration / defaults for this skill's own keys** — see Step 2.5 below.
-7. **Apply CLI flag overrides** (`--run-tests`, `--visual`, `--dimensions`, `--negative-control`, `--tick-ac`, `--comment-on-task`, `--time-log`, `--language`) to the in-memory config — do not persist.
+7. **Apply CLI flag overrides** (`--run-tests`, `--visual`, `--dimensions`, `--negative-control`, `--tick-ac`, `--comment-on-task`, `--time-log`, `--language`, `--mode`) to the in-memory config — do not persist. Resolve the work mode (Step 2.6) first and apply the individual flags after it, so an explicit flag wins over what `build` implies.
 8. **Never echo the API token.** Always pass auth to `curl` via `-u` (kept out of `ps`), never in the URL.
 
 ### Step 2.5 — Test-skill config defaults (idempotent merge)
@@ -152,6 +153,7 @@ Add this skill's own keys to the same config file, defaulting any missing keys:
 
 ```bash
 jq '
+  (.mode //= "harden") |
   (.test_skill //= {}) |
   (.test_skill.run_tests //= "auto") |
   (.test_skill.visual_mode //= "auto") |
@@ -245,6 +247,50 @@ re-runs that migration once, and it still touches only an untouched default.
 an e-mail, a deep-link landing page). List its identifier there and Step 6.6.4
 stops reporting it, so the finding list stays signal and does not train the
 reader to ignore it.
+
+### Step 2.6 — Work mode: build vs. harden (v1.3.0)
+
+The top-level `mode` key (`"harden"` by default) is shared with the
+`teamwork-task` plugin. Resolution order, first hit wins:
+1. `--mode=build|harden` on the command line;
+2. the project's `.claude/wame-mode.local.md` YAML frontmatter `mode:` —
+   written by `/wame-mode` from the `wame-work-mode` plugin;
+3. `config.mode`;
+4. `harden`.
+
+```bash
+WORK_MODE="<value of --mode, or empty>"
+if [ -z "$WORK_MODE" ] && [ -f .claude/wame-mode.local.md ]; then
+  WORK_MODE=$(sed -n '/^---$/,/^---$/{s/^mode:[[:space:]]*//p;}' .claude/wame-mode.local.md \
+    | head -n 1 | tr -d "\"' \r")
+fi
+[ -z "$WORK_MODE" ] && WORK_MODE=$(jq -r '.mode // empty' "$CONFIG_FILE")
+case "$WORK_MODE" in build|harden) ;; *) WORK_MODE=harden ;; esac
+echo "WORK_MODE=$WORK_MODE"
+```
+
+`build` maps onto the existing switches at once, in memory only:
+
+| Switch | `harden` (default) | `build` |
+|---|---|---|
+| `run_tests` (`--run-tests`) | config | `never` |
+| `visual_mode` (`--visual`) | config | `skip` — no chrome-devtools MCP, no browser runner |
+| `review_dimensions` (`--dimensions`) | config | `[]` — same as `--dimensions=none` |
+| `negative_control` (`--negative-control`) | config | `false` |
+
+An explicit individual flag still wins (`--mode=build --run-tests=always`
+runs the tests). In `build` mode the run still parses the criteria, maps them
+onto existing tests, writes manual scenarios, logs time and renders the
+report; the report header says `Work mode: build — tests, browser, review
+dimensions and negative control deferred to /wame-harden`, and no criterion is
+ticked on the strength of a test that was not run.
+
+**Browser tooling rule (every mode).** Never install or uninstall Playwright,
+Puppeteer or Laravel Dusk for a single run. Use the chrome-devtools MCP or the
+runner the project already has. When a check needs a runner the project
+lacks, ask the user **once**; on yes, install it permanently as a committed
+dev dependency and never remove it afterwards; on no, write a manual scenario
+instead.
 
 ---
 
@@ -544,7 +590,7 @@ if [ -f package.json ]; then
 fi
 ```
 
-Then detect whether the **chrome-devtools MCP** is available in this session by checking the system reminder / MCP list (the model can see the available tools — look for any `mcp__*chrome-devtools__*` tool). If present → `HAS_BROWSER_MCP=1`. This lets the skill drive a real browser without requiring the project to have Cypress / Playwright / Dusk installed.
+Then detect whether the **chrome-devtools MCP** is available in this session by checking the system reminder / MCP list (the model can see the available tools — look for any `mcp__*chrome-devtools__*` tool). If present → `HAS_BROWSER_MCP=1`. In `build` mode (Step 2.6) keep `HAS_BROWSER_MCP=0` and do not open a browser at all. This lets the skill drive a real browser without requiring the project to have Cypress / Playwright / Dusk installed.
 
 Discover existing test files using the globs in `config.test_skill.test_globs`. Build a single index:
 
@@ -580,7 +626,10 @@ If `config.test_skill.run_tests == "never"` → skip execution, fall straight th
 
 ### 6.2 Execute candidate tests
 
-Pick the highest-scoring candidate. Decide the runner.
+Never reached in `build` mode (`run_tests: never`, Step 2.6) — candidates are
+only listed in the report. Pick the highest-scoring candidate. Decide the runner;
+for a browser runner (Dusk, Cypress, Playwright) use only one the project
+already has installed — never install one for this run.
 
 > **SHELL-SAFETY CONTRACT (critical).** The `<test name>` is grepped verbatim
 > from the test file and is fully attacker/author-controlled. **Never** splice
@@ -622,6 +671,9 @@ Capture the command's exit code and stdout. Cap stdout at the last 200 lines so 
 - Exit non-zero with infrastructure error (no DB, missing env, exit 255 from a runner crash) → do not call this a failure; fall through to 6.3 / 6.4 and record this in the criterion's `notes` ("test runner errored — not a real failure").
 
 ### 6.3 Visual verification via chrome-devtools MCP
+
+Skipped in `build` mode (`visual_mode: skip`, Step 2.6) — the criterion falls
+through to a manual scenario.
 
 If the criterion is `kind == "ui"` (or `unknown` and the task touches files matching `config.test_skill.visual_file_patterns`), and `config.test_skill.visual_mode != "skip"`, and `HAS_BROWSER_MCP == 1`:
 
@@ -777,7 +829,7 @@ Check, in this order:
 
 Two halves, both cheap:
 
-**Frontend** — when a browser session is available, run
+**Frontend** — when a browser session is available (never in `build` mode), run
 `performance_start_trace` with `reload: true` on the screen the task touches and
 compare against `config.test_skill.performance_budgets`:
 
@@ -859,7 +911,7 @@ grep -rlE "extends (Resource|BaseResource)\b" app/Nova wamesk --include="*.php" 
 
 # 2. Every screen a menu links to. Read it from the rendered navigation — the
 #    live sidebar is the truth, a config array is a guess. With a browser
-#    session: navigate to the app root, expand the nav, take_snapshot, and
+#    session (never in build mode): navigate to the app root, expand the nav, take_snapshot, and
 #    collect the hrefs.
 
 # 3. Anything in (1) and not in (2) is a CANDIDATE orphan, not yet a finding.
@@ -1385,7 +1437,7 @@ Stop and ask via **AskUserQuestion** only on these genuine blockers:
 - API returns 401 (token invalid / expired).
 - The task has no acceptance criteria *and* `suggest_missing_acceptance_criteria == false` — ask whether to skip the task or enable suggestion.
 - The dev server is needed for visual verification but is not running — ask whether to switch to manual scenarios or to skip the criterion.
-- The chosen test runner is not installed in the project (e.g. Cypress imports but `npx cypress` is missing) — ask whether to skip or install.
+- The chosen test runner is not installed in the project (e.g. Cypress imports but `npx cypress` is missing) — never install or uninstall Playwright / Puppeteer / Dusk / Cypress for this run. Ask **once**: *skip (manual scenario)* or *add it to the project permanently* (a committed dev dependency, never removed afterwards); prefer the chrome-devtools MCP for visual criteria meanwhile.
 - **A negative control left the working tree dirty** and the restore did not take
   (Step 6.5.5 step 4). Stop: a QA pass must not hand back a repository with a fix
   reverted in it. Show `git status` and the backup path, and let the user restore.

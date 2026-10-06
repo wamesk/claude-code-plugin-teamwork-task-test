@@ -11,6 +11,19 @@ This is the **read-only sibling** of [`teamwork-task`](https://github.com/wamesk
 they were actually delivered.* The two plugins share the same Teamwork API
 token config — set it up once, both skills use it.
 
+**Work modes (1.3.0).** `--mode=build` (or `"mode": "build"` in the shared
+config, or `mode: build` in the project's `.claude/wame-mode.local.md` written by
+`/wame-mode` from the [`wame-work-mode`](https://github.com/wamesk/claude-code-plugin-wame-work-mode)
+plugin) is `--run-tests=never --visual=skip --dimensions=none
+--negative-control=false` in one switch: criteria are parsed, mapped and turned
+into manual scenarios, but nothing is run, no browser is opened and nothing is
+ticked on an unrun test — `/wame-harden` runs those checks once at the end.
+`harden` (default) behaves exactly like 1.2.0. Resolution order: `--mode` >
+`.claude/wame-mode.local.md` > `mode` > `harden`; an explicit individual flag
+still wins. Browser runners (Playwright, Puppeteer, Dusk, Cypress) are never
+installed for a single run — a missing one is asked about once and, on yes,
+added to the project permanently.
+
 ## Installation
 
 ```text
@@ -187,6 +200,7 @@ It is **shared with the `teamwork-task` plugin**. This plugin only adds the
     "api_token": "***"
   },
   "default_language": "sk",
+  "mode": "harden",                     // harden | build — shared with teamwork-task (1.3.0)
 
   "test_skill": {
     "run_tests": "auto",                 // auto | never | always
@@ -242,6 +256,7 @@ later sticks.
 | `--comment-on-task=` | `true`, `false` | `false` | Post the per-task report as a Teamwork comment. |
 | `--time-log=` | `true`, `false` | `true` | Log QA time back to Teamwork (sequential, no overlaps). |
 | `--language=` | `sk`, `en` | from config (`sk`) | Language for the report and AC suggestions. |
+| `--mode=` | `build`, `harden` | `.claude/wame-mode.local.md`, then `mode`, then `harden` | **1.3.0** — `build` = `--run-tests=never --visual=skip --dimensions=none --negative-control=false`; explicit flags still win. |
 | `--include-completed` | (flag) | off | Don't skip tasks already marked `completed` in Teamwork. |
 | `--skip-ac=` | comma list of AC IDs (`ac-2,ac-5`) | — | Skip specific criteria for this run. |
 
@@ -284,6 +299,9 @@ when it decides pass / fail.
   refactor task — it is never applied during the run and never changes a
   verdict.
 - Push to a git remote.
+- Install or uninstall Playwright, Puppeteer, Dusk or Cypress just for one run.
+  A missing runner is asked about once; on yes it becomes a permanent, committed
+  dev dependency.
 - Leave your code changed. It **does** edit code during a negative control
   (Step 6.5.5) — that is the point: revert the fix, watch the test fail — but it
   backs the file up outside the repo first, restores it, and verifies the restore

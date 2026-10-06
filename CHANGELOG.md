@@ -5,6 +5,34 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-10-06
+
+A **build** work mode, so a QA pass during fast iteration does not run the
+whole verification machinery on every prompt, and a fixed rule for browser
+tooling instead of improvised installs.
+
+### Added
+
+- **`--mode=build|harden` and the shared top-level `mode` key** (default
+  `"harden"`, added by the Step 2.5 merge). New Step 2.6 resolves it —
+  `--mode` > the project's `.claude/wame-mode.local.md` frontmatter `mode:`
+  (written by `/wame-mode`, plugin `wame-work-mode`) > `config.mode` >
+  `harden`. `build` maps onto the existing switches at once, in memory only:
+  `--run-tests=never`, `--visual=skip`, `--dimensions=none`,
+  `--negative-control=false`. Explicit individual flags still win. The
+  browser steps (MCP detection in Step 5, the browser runners in 6.2, the
+  visual check in 6.3, the performance trace in 6.6.2 and the live-menu read
+  in 6.6.4) are skipped; the report says which checks were deferred to
+  `/wame-harden`.
+
+### Changed
+
+- **No runner is installed on the fly.** The *"ask whether to skip or
+  install"* blocker became: never install or uninstall Playwright / Puppeteer
+  / Dusk / Cypress for one run; ask once — skip with a manual scenario, or add
+  the runner to the project permanently as a committed dev dependency; prefer
+  the chrome-devtools MCP for visual criteria.
+
 ## [1.2.0] — 2026-09-24
 
 One advisory review dimension and a round of fixes. The fixes come first in
