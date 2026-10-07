@@ -5,6 +5,44 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-10-07
+
+The companion plugin `wame-work-mode` 1.0.0 was renamed to
+[`work-mode`](https://github.com/wamesk/claude-code-plugin-work-mode) 2.0.0
+(decided 2026-10-07), and its modes and files were renamed with it. 1.4.0
+follows the new names, stops touching the shared config's `mode` key — the
+global default moved to Claude Code `/config` — and keeps reading the old
+names for one version.
+
+### Changed
+
+- **Modes renamed: `build` → `fast`, `harden` → `full`** (`full` stays the
+  default). `--mode=fast|full` in the argument hint, Step 2.6 and every step
+  that branches on the mode (5, 6.2, 6.3, 6.6.2, 6.6.4); the report header
+  now says `Work mode: fast — … deferred to /work-mode full`.
+- **Commands renamed in the companion plugin.** `/wame-mode` is now
+  `/work-mode fast|full|status`, and `/wame-harden` is now `/work-mode full`
+  (runs the pending deferred checks once, then switches to `full`).
+- **Mode resolution (Step 2.6):** `--mode=` > the project's
+  `.claude/work-mode.local.md` > legacy `.claude/wame-mode.local.md`
+  (`build` → `fast`, `harden` → `full`) > `full`. No config fallback any
+  more: the global default is the `work-mode` plugin option `default_mode`
+  in `/config`, which that plugin's SessionStart hook writes into the
+  project's mode file — the same order `teamwork-task` 1.7.0 uses.
+
+### Removed
+
+- **The shared `mode` config key.** The Step 2.5 merge no longer adds
+  `(.mode //= "harden")` and nothing reads `.mode`; `config.example.json`
+  and the README config sample no longer carry it. `teamwork-task` 1.7.0
+  deletes the key from the shared file.
+
+### Deprecated
+
+- **The pre-rename names, read for one version only.** `--mode=build` /
+  `--mode=harden` map to `fast` / `full` and print one `⚠` line; the legacy
+  `.claude/wame-mode.local.md` is read when the new mode file is absent.
+
 ## [1.3.0] — 2026-10-06
 
 A **build** work mode, so a QA pass during fast iteration does not run the

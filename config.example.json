@@ -4,7 +4,6 @@
     "api_token": ""
   },
   "default_language": "sk",
-  "mode": "harden",
   "test_skill": {
     "run_tests": "auto",
     "visual_mode": "auto",
