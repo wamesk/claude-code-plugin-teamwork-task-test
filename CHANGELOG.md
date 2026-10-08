@@ -5,6 +5,31 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-10-08
+
+A QA pass that skips the tests, the browser and the review dimensions proves
+nothing — yet in a fast-mode project 1.3.0–1.4.0 did exactly that by default.
+1.5.0 takes the skill out of the work modes: it always runs full.
+
+### Changed
+
+- **Always full (Step 2.6).** The skill no longer reads the project's
+  `.claude/work-mode.local.md` or the legacy `.claude/wame-mode.local.md`, the
+  `work-mode` option `default_mode` in `/config` does not apply, and the
+  fast-mode reminder the `work-mode` plugin adds to every prompt is ignored for
+  the whole run. Nothing is written to `.claude/work-mode-deferred.local.md`; a
+  subagent the run hands work to is briefed full mode.
+- The `fast` branches in Steps 5, 6.2, 6.3, 6.6.2 and 6.6.4 and the
+  `Work mode: fast` report header are gone.
+
+### Removed
+
+- **`--mode=fast|full`** (and the deprecated `build` / `harden` aliases).
+  `--mode` is still accepted but ignored: `--mode=full`, which `teamwork-task`
+  passes on its handoff, silently; any other value with one `⚠` line. A
+  lighter run goes through the individual flags — `--run-tests=never`,
+  `--visual=skip`, `--dimensions=none`, `--negative-control=false`.
+
 ## [1.4.0] — 2026-10-07
 
 The companion plugin `wame-work-mode` 1.0.0 was renamed to

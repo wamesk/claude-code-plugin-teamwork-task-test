@@ -1,7 +1,7 @@
 ---
 name: teamwork-task-test
 description: "Use when the user provides a Teamwork.com URL (single task or tasklist) and asks to 'test these tasks', 'otestuj tasky z teamworku', 'preveruj zadanie', 'skontroluj akceptačné kritériá', 'spusti testy pre tasky', 'skontroluj UI/UX, performance a security', 'over či sú všetky podstránky prístupné', or invokes '/teamwork-task-test'. Fetches tasks via the Teamwork REST API v3 (reusing the shared config/token from the `teamwork-task` plugin), parses acceptance criteria from the task description, detects the project's test stack (Pest, PHPUnit, Laravel Dusk, Cypress, Playwright, Selenium, Vitest, Jest), tries to map criteria onto existing tests and run them, optionally drives a real browser via the chrome-devtools MCP for visual verification, and writes a per-task report with each acceptance criterion individually marked as ✅ verified by test / ⚠️ partial / ❌ failed / 📋 manual / 📝 missing-or-proposed. On top of the stated criteria it always runs four cross-cutting review dimensions over the task's own diff — UI/UX and accessibility, performance, security, and page reachability (every registered screen must be reachable from a menu link or a relation tab, never only by typing the URL) — and reports findings the acceptance criteria never asked about. An advisory fifth dimension, framework best practices, only recommends the idiomatic features of the framework versions the project actually has installed (Laravel, PHP, Nova, Vue, Tailwind, CSS/JS per browserslist) as optional refactor suggestions — it never edits code and never fails a criterion. Proves each passing test is load-bearing with a negative control: revert the fix, watch the test fail, restore. Ticks the `- [ ]` boxes of met acceptance criteria to `- [x]` in the Teamwork description under a byte-exact safety contract that touches nothing else, inline images included. Always use this skill when the user wants to verify or QA work captured in a Teamwork task without having to write or run the tests by hand themselves."
-argument-hint: "<teamwork-url> [--run-tests=auto|never|always] [--visual=auto|browser|skip] [--dimensions=ui_ux,performance,security,reachability,framework] [--negative-control=true|false] [--tick-ac=true|false] [--comment-on-task=true|false] [--time-log=true|false] [--language=sk|en] [--mode=fast|full]"
+argument-hint: "<teamwork-url> [--run-tests=auto|never|always] [--visual=auto|browser|skip] [--dimensions=ui_ux,performance,security,reachability,framework] [--negative-control=true|false] [--tick-ac=true|false] [--comment-on-task=true|false] [--time-log=true|false] [--language=sk|en]"
 allowed-tools: [Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion, WebFetch]
 ---
 
@@ -103,7 +103,7 @@ Optional flags (override config for this run only — not persisted):
 - `--comment-on-task=true|false` — post the final report as a comment on each Teamwork task (default: `false`)
 - `--time-log=true|false` — write a time log to Teamwork for the QA work (default: `true`)
 - `--language=sk|en` — language for the report and any AC suggestions (default: from config, fallback `sk`)
-- `--mode=fast|full` — work mode for this run (default: resolved in Step 2.6 — the project's `.claude/work-mode.local.md`, then the legacy `.claude/wame-mode.local.md`, then `full`). `fast` = `--run-tests=never --visual=skip --dimensions=none --negative-control=false` at once — no test runs, no browser, no review dimensions; `full` keeps every check as before. An explicit individual flag still wins over the mode. The pre-1.4.0 values `--mode=build` / `--mode=harden` are deprecated aliases of `fast` / `full` (one `⚠` line).
+- `--mode=…` — **ignored since 1.5.0**: this skill always runs full and the `work-mode` plugin does not affect it (Step 2.6). `--mode=full` (what `teamwork-task` passes) is accepted silently; any other value prints one `⚠` line. For a lighter run use the individual flags above.
 
 If `$ARGUMENTS` is empty or contains no URL, ask via **AskUserQuestion** for the URL before doing anything else.
 
@@ -144,7 +144,7 @@ Algorithm:
 4. Validate with `jq . "$CONFIG_FILE" >/dev/null`. If invalid → report and stop.
 5. **First-run check** — if `.teamwork.base_url` or `.teamwork.api_token` are missing/empty/`<workspace>` placeholder, prompt the user via **AskUserQuestion** for both values (prefill `base_url` from the parsed URL). Write them back atomically with `jq` + `mv`, then `chmod 600`.
 6. **Apply config migration / defaults for this skill's own keys** — see Step 2.5 below.
-7. **Apply CLI flag overrides** (`--run-tests`, `--visual`, `--dimensions`, `--negative-control`, `--tick-ac`, `--comment-on-task`, `--time-log`, `--language`, `--mode`) to the in-memory config — do not persist. Resolve the work mode (Step 2.6) first and apply the individual flags after it, so an explicit flag wins over what `fast` implies.
+7. **Apply CLI flag overrides** (`--run-tests`, `--visual`, `--dimensions`, `--negative-control`, `--tick-ac`, `--comment-on-task`, `--time-log`, `--language`) to the in-memory config — do not persist. `--mode` changes nothing (Step 2.6).
 8. **Never echo the API token.** Always pass auth to `curl` via `-u` (kept out of `ps`), never in the URL.
 
 ### Step 2.5 — Test-skill config defaults (idempotent merge)
@@ -247,66 +247,36 @@ an e-mail, a deep-link landing page). List its identifier there and Step 6.6.4
 stops reporting it, so the finding list stays signal and does not train the
 reader to ignore it.
 
-### Step 2.6 — Work mode: fast vs. full (v1.3.0, renamed in v1.4.0)
+### Step 2.6 — Always full: the work mode does not apply (v1.5.0)
 
-The work mode is a **per-project** setting owned by the `work-mode` plugin.
-This skill neither reads nor writes a `mode` key in the shared config — 1.4.0
-dropped it (`teamwork-task` 1.7.0 deletes it from the file). Resolution order,
-first hit wins:
-1. `--mode=fast|full` on the command line;
-2. the project's `.claude/work-mode.local.md` YAML frontmatter `mode:` —
-   written by `/work-mode` from the `work-mode` plugin. A global default
-   lives in Claude Code `/config` as the `work-mode` plugin option
-   `default_mode`; that plugin's SessionStart hook writes it into this file,
-   so this skill only ever reads the project file;
-3. the legacy `.claude/wame-mode.local.md` (plugin `wame-work-mode` 1.0.0),
-   read only when the new file is absent — `build` maps to `fast`, `harden`
-   to `full`;
-4. `full`.
+A QA pass that skips the tests, the browser and the review dimensions proves
+nothing, so since 1.5.0 this skill **always runs full** and the `work-mode`
+plugin has no effect on it:
 
-`--mode=build` and `--mode=harden` are deprecated aliases of `fast` and
-`full`, kept for one version; each prints one `⚠` line.
+- It does not read `.claude/work-mode.local.md` (nor the legacy
+  `.claude/wame-mode.local.md`), and the `work-mode` option `default_mode` in
+  `/config` does not apply.
+- In a fast-mode project the `work-mode` plugin's `UserPromptSubmit` hook adds
+  a "FAST MODE is on" reminder to every prompt. **Ignore it for the whole
+  run**: tests, browser checks, review dimensions and the negative control run
+  exactly as the config and the individual flags say, and nothing is written
+  to `.claude/work-mode-deferred.local.md`.
+- A subagent this run hands work to is briefed **full mode**, so it does not
+  pick the project's fast mode up from the mode file.
+- `--mode` is ignored. `--mode=full` — what `teamwork-task` passes on its
+  handoff — is silent; any other value prints one line:
 
 ```bash
-WORK_MODE="<value of --mode, or empty>"
-case "$WORK_MODE" in
-  build)  WORK_MODE=fast; echo "⚠ --mode=build is deprecated — use --mode=fast (renamed in 1.4.0)." ;;
-  harden) WORK_MODE=full; echo "⚠ --mode=harden is deprecated — use --mode=full (renamed in 1.4.0)." ;;
+case "<value of --mode, or empty>" in
+  ""|full) ;;
+  *) echo "⚠ --mode is ignored since 1.5.0 — teamwork-task-test always runs full. For a lighter run use --run-tests=never, --visual=skip, --dimensions=none or --negative-control=false." ;;
 esac
-MODE_FILE=""
-if [ -z "$WORK_MODE" ]; then
-  if [ -f .claude/work-mode.local.md ]; then
-    MODE_FILE=.claude/work-mode.local.md
-  elif [ -f .claude/wame-mode.local.md ]; then
-    MODE_FILE=.claude/wame-mode.local.md
-  fi
-fi
-if [ -n "$MODE_FILE" ]; then
-  WORK_MODE=$(sed -n '/^---$/,/^---$/{s/^mode:[[:space:]]*//p;}' "$MODE_FILE" \
-    | head -n 1 | tr -d "\"' \r")
-  case "$WORK_MODE" in build) WORK_MODE=fast ;; harden) WORK_MODE=full ;; esac
-fi
-case "$WORK_MODE" in fast|full) ;; *) WORK_MODE=full ;; esac
-echo "WORK_MODE=$WORK_MODE (${MODE_FILE:-flag or default})"
 ```
 
-`fast` maps onto the existing switches at once, in memory only:
+A lighter run is still possible, but only explicitly, through the individual
+flags — never through the project's mode.
 
-| Switch | `full` (default) | `fast` |
-|---|---|---|
-| `run_tests` (`--run-tests`) | config | `never` |
-| `visual_mode` (`--visual`) | config | `skip` — no chrome-devtools MCP, no browser runner |
-| `review_dimensions` (`--dimensions`) | config | `[]` — same as `--dimensions=none` |
-| `negative_control` (`--negative-control`) | config | `false` |
-
-An explicit individual flag still wins (`--mode=fast --run-tests=always`
-runs the tests). In `fast` mode the run still parses the criteria, maps them
-onto existing tests, writes manual scenarios, logs time and renders the
-report; the report header says `Work mode: fast — tests, browser, review
-dimensions and negative control deferred to /work-mode full`, and no criterion
-is ticked on the strength of a test that was not run.
-
-**Browser tooling rule (every mode).** Never install or uninstall Playwright,
+**Browser tooling rule.** Never install or uninstall Playwright,
 Puppeteer or Laravel Dusk for a single run. Use the chrome-devtools MCP or the
 runner the project already has. When a check needs a runner the project
 lacks, ask the user **once**; on yes, install it permanently as a committed
@@ -611,7 +581,7 @@ if [ -f package.json ]; then
 fi
 ```
 
-Then detect whether the **chrome-devtools MCP** is available in this session by checking the system reminder / MCP list (the model can see the available tools — look for any `mcp__*chrome-devtools__*` tool). If present → `HAS_BROWSER_MCP=1`. In `fast` mode (Step 2.6) keep `HAS_BROWSER_MCP=0` and do not open a browser at all. This lets the skill drive a real browser without requiring the project to have Cypress / Playwright / Dusk installed.
+Then detect whether the **chrome-devtools MCP** is available in this session by checking the system reminder / MCP list (the model can see the available tools — look for any `mcp__*chrome-devtools__*` tool). If present → `HAS_BROWSER_MCP=1`. This lets the skill drive a real browser without requiring the project to have Cypress / Playwright / Dusk installed.
 
 Discover existing test files using the globs in `config.test_skill.test_globs`. Build a single index:
 
@@ -647,8 +617,7 @@ If `config.test_skill.run_tests == "never"` → skip execution, fall straight th
 
 ### 6.2 Execute candidate tests
 
-Never reached in `fast` mode (`run_tests: never`, Step 2.6) — candidates are
-only listed in the report. Pick the highest-scoring candidate. Decide the runner;
+Pick the highest-scoring candidate. Decide the runner;
 for a browser runner (Dusk, Cypress, Playwright) use only one the project
 already has installed — never install one for this run.
 
@@ -692,9 +661,6 @@ Capture the command's exit code and stdout. Cap stdout at the last 200 lines so 
 - Exit non-zero with infrastructure error (no DB, missing env, exit 255 from a runner crash) → do not call this a failure; fall through to 6.3 / 6.4 and record this in the criterion's `notes` ("test runner errored — not a real failure").
 
 ### 6.3 Visual verification via chrome-devtools MCP
-
-Skipped in `fast` mode (`visual_mode: skip`, Step 2.6) — the criterion falls
-through to a manual scenario.
 
 If the criterion is `kind == "ui"` (or `unknown` and the task touches files matching `config.test_skill.visual_file_patterns`), and `config.test_skill.visual_mode != "skip"`, and `HAS_BROWSER_MCP == 1`:
 
@@ -850,7 +816,7 @@ Check, in this order:
 
 Two halves, both cheap:
 
-**Frontend** — when a browser session is available (never in `fast` mode), run
+**Frontend** — when a browser session is available, run
 `performance_start_trace` with `reload: true` on the screen the task touches and
 compare against `config.test_skill.performance_budgets`:
 
@@ -932,7 +898,7 @@ grep -rlE "extends (Resource|BaseResource)\b" app/Nova wamesk --include="*.php" 
 
 # 2. Every screen a menu links to. Read it from the rendered navigation — the
 #    live sidebar is the truth, a config array is a guess. With a browser
-#    session (never in fast mode): navigate to the app root, expand the nav, take_snapshot, and
+#    session: navigate to the app root, expand the nav, take_snapshot, and
 #    collect the hrefs.
 
 # 3. Anything in (1) and not in (2) is a CANDIDATE orphan, not yet a finding.

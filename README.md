@@ -11,20 +11,14 @@ This is the **read-only sibling** of [`teamwork-task`](https://github.com/wamesk
 they were actually delivered.* The two plugins share the same Teamwork API
 token config — set it up once, both skills use it.
 
-**Work modes (1.3.0, renamed in 1.4.0).** `--mode=fast` (or `mode: fast` in
-the project's `.claude/work-mode.local.md` written by `/work-mode` from the
-[`work-mode`](https://github.com/wamesk/claude-code-plugin-work-mode) plugin)
-is `--run-tests=never --visual=skip --dimensions=none
---negative-control=false` in one switch: criteria are parsed, mapped and turned
-into manual scenarios, but nothing is run, no browser is opened and nothing is
-ticked on an unrun test — `/work-mode full` runs those checks once at the end.
-`full` (default) behaves exactly like 1.2.0. Resolution order: `--mode` >
-`.claude/work-mode.local.md` > legacy `.claude/wame-mode.local.md` > `full`;
-an explicit individual flag still wins. There is no config key: the global
-default is the `work-mode` plugin option `default_mode` in Claude Code
-`/config`, which that plugin's SessionStart hook writes into the project's
-mode file. The pre-1.4.0 values `--mode=build|harden` and the legacy mode
-file are still read for one version (`build` → `fast`, `harden` → `full`).
+**Always full (1.5.0).** A QA pass is not affected by the
+[`work-mode`](https://github.com/wamesk/claude-code-plugin-work-mode) plugin:
+it ignores the project's `.claude/work-mode.local.md`, the `default_mode`
+option in `/config` and the fast-mode reminder, and runs the tests, the
+browser checks, the review dimensions and the negative control as configured.
+`--mode` is ignored (`--mode=full` silently, anything else with one `⚠` line);
+a lighter run goes through the individual flags (`--run-tests=never`,
+`--visual=skip`, `--dimensions=none`, `--negative-control=false`).
 Browser runners (Playwright, Puppeteer, Dusk, Cypress) are never installed for
 a single run — a missing one is asked about once and, on yes, added to the
 project permanently.
@@ -260,7 +254,7 @@ later sticks.
 | `--comment-on-task=` | `true`, `false` | `false` | Post the per-task report as a Teamwork comment. |
 | `--time-log=` | `true`, `false` | `true` | Log QA time back to Teamwork (sequential, no overlaps). |
 | `--language=` | `sk`, `en` | from config (`sk`) | Language for the report and AC suggestions. |
-| `--mode=` | `fast`, `full` | `.claude/work-mode.local.md`, then the legacy `.claude/wame-mode.local.md`, then `full` | **1.3.0**, renamed in **1.4.0** — `fast` = `--run-tests=never --visual=skip --dimensions=none --negative-control=false`; explicit flags still win. `build` / `harden` are deprecated aliases for one version. |
+| `--mode=` | — | — | **Ignored since 1.5.0** — the skill always runs full; the `work-mode` plugin does not affect it. Use the individual flags for a lighter run. |
 | `--include-completed` | (flag) | off | Don't skip tasks already marked `completed` in Teamwork. |
 | `--skip-ac=` | comma list of AC IDs (`ac-2,ac-5`) | — | Skip specific criteria for this run. |
 
