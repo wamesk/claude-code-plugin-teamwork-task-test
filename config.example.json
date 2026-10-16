@@ -4,6 +4,7 @@
     "api_token": ""
   },
   "default_language": "sk",
+  "time_rounding_minutes": 5,
   "test_skill": {
     "run_tests": "auto",
     "visual_mode": "auto",

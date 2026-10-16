@@ -23,6 +23,18 @@ Browser runners (Playwright, Puppeteer, Dusk, Cypress) are never installed for
 a single run — a missing one is asked about once and, on yes, added to the
 project permanently.
 
+**QA time in whole 5-minute blocks (1.6.0).** The QA time log follows the WAME
+time-logging rules `wame-time-logging-v1` from the `work-rules` plugin
+(skill `wame-time-logging`), the same rules every WAME plugin that writes time
+uses. Every entry is whole blocks (5, 10, 15 … min) on the 5-minute grid —
+never a 2- or 3-minute entry. QA of quick tasks that fit into one block
+together goes into **one shared entry** on the task with the most QA minutes,
+and its description names every task in it; a leftover of even 1 minute at the
+end of the run is logged as 5 minutes. Entries continue from your last entry of
+the day, never overlap one (the last entry is re-read before every write), and
+never end after the current 5-minute block. The tasklist summary shows which
+entry holds each task.
+
 ## Installation
 
 ```text
@@ -31,6 +43,12 @@ project permanently.
 ```
 
 (If you already added the WAME marketplace, only the second line is needed.)
+
+The plugin requires the `work-rules` plugin (skill `wame-time-logging`, the
+time-logging rules `wame-time-logging-v1`). It is declared in `dependencies`,
+so it installs together with this plugin; if it is missing, run
+`/plugin install work-rules@wame` — until then the QA pass still runs, but no
+time is logged and the summary lists the unlogged tasks.
 
 ## Quickstart
 
@@ -102,8 +120,9 @@ the same file.
     recommendations and the negative-control table.
 12. **Tasklist run** also produces a final summary table over all tasks.
 13. **Ticks the met criteria** to `- [x]` in the Teamwork description *(1.1.0,
-    default ON)* under a byte-exact safety contract, **logs time** (default ON,
-    sequential and non-overlapping like the `teamwork-task` plugin) and
+    default ON)* under a byte-exact safety contract, **logs time** (default ON;
+    since 1.6.0 in whole 5-minute blocks under the `work-rules` time-logging
+    rules — quick tasks share one entry, nothing overlaps) and
     **optionally posts the report as a comment** (default OFF).
 
 ## The review dimensions *(1.1.0, framework 1.2.0)*
@@ -199,12 +218,13 @@ It is **shared with the `teamwork-task` plugin**. This plugin only adds the
     "api_token": "***"
   },
   "default_language": "sk",
+  "time_rounding_minutes": 5,            // the time-log block, shared with teamwork-task
 
   "test_skill": {
     "run_tests": "auto",                 // auto | never | always
     "visual_mode": "auto",               // auto | browser | skip
     "comment_on_task": false,            // post the report as a comment
-    "time_log": true,                    // QA work appears in the timesheet
+    "time_log": true,                    // QA work appears in the timesheet, in whole blocks
     "move_on_pass": "",                  // e.g. "Testing" to move on full ✅
     "move_on_fail": "",                  // e.g. "In progress" to move on ❌
     "report_language": "sk",             // sk | en
@@ -235,6 +255,12 @@ It is **shared with the `teamwork-task` plugin**. This plugin only adds the
 All `test_skill.*` keys can be temporarily overridden via CLI flags — see
 `SKILL.md` for the full list.
 
+The time log reads only `test_skill.time_log` and the shared
+`time_rounding_minutes` (the block, default `5`). The shared keys
+`round_threshold_minutes` and `min_log_minutes` are obsolete for this plugin
+since 1.6.0 and ignored — they allowed 1–4-minute entries, which the
+time-logging rules forbid. They stay in the file for `teamwork-task`.
+
 Since 1.2.0 the default `review_dimensions` includes `framework`. An existing
 config is migrated once: `framework` is appended only when the list is still the
 untouched 1.1.x default (`["ui_ux", "performance", "security",
@@ -252,7 +278,7 @@ later sticks.
 | `--negative-control=` | `true`, `false` | `true` | Revert each fix and confirm its test goes red before trusting it. |
 | `--tick-ac=` | `true`, `false` | `true` | Tick met criteria to `- [x]` in the Teamwork description. |
 | `--comment-on-task=` | `true`, `false` | `false` | Post the per-task report as a Teamwork comment. |
-| `--time-log=` | `true`, `false` | `true` | Log QA time back to Teamwork (sequential, no overlaps). |
+| `--time-log=` | `true`, `false` | `true` | Log QA time back to Teamwork in whole 5-minute blocks, quick tasks in one shared entry, no overlaps. |
 | `--language=` | `sk`, `en` | from config (`sk`) | Language for the report and AC suggestions. |
 | `--mode=` | — | — | **Ignored since 1.5.0** — the skill always runs full; the `work-mode` plugin does not affect it. Use the individual flags for a lighter run. |
 | `--include-completed` | (flag) | off | Don't skip tasks already marked `completed` in Teamwork. |

@@ -1,8 +1,8 @@
 ---
 name: teamwork-task-test
-description: "Use when the user provides a Teamwork.com URL (task or tasklist) and asks to 'test these tasks', 'otestuj tasky z teamworku', 'preveruj zadanie', 'skontroluj akceptačné kritériá', 'spusti testy pre tasky', 'skontroluj UI/UX, performance a security', 'over či sú všetky podstránky prístupné', or invokes '/teamwork-task-test'. Fetches the tasks via the Teamwork REST API v3, parses the acceptance criteria, detects the test stack (Pest, PHPUnit, Dusk, Cypress, Playwright, Selenium, Vitest, Jest), runs the existing tests that cover the criteria, drives a browser via the chrome-devtools MCP when useful, and writes a per-task report with every criterion marked verified, partial, failed, manual or missing. Always reviews the task's diff for UI/UX, performance, security and page reachability, plus advisory framework recommendations. Proves each passing test with a negative control. Ticks met criteria in the Teamwork description, nothing else. Always runs full, whatever the work mode."
+description: "Use when the user provides a Teamwork.com URL (task or tasklist) and asks to 'test these tasks', 'otestuj tasky z teamworku', 'preveruj zadanie', 'skontroluj akceptačné kritériá', 'spusti testy pre tasky', 'skontroluj UI/UX, performance a security', 'over či sú všetky podstránky prístupné', or invokes '/teamwork-task-test'. Fetches the tasks via the Teamwork REST API v3, parses the acceptance criteria, detects the test stack (Pest, PHPUnit, Dusk, Cypress, Playwright, Selenium, Vitest, Jest), runs the existing tests that cover the criteria, drives a browser via the chrome-devtools MCP, and writes a per-task report with every criterion marked verified, partial, failed, manual or missing. Always reviews the task's diff for UI/UX, performance, security and page reachability, plus advisory framework recommendations. Proves each passing test with a negative control. Ticks met criteria in the Teamwork description and logs QA time in whole 5-minute blocks. Always runs full, whatever the work mode."
 argument-hint: "<teamwork-url> [--run-tests=auto|never|always] [--visual=auto|browser|skip] [--dimensions=ui_ux,performance,security,reachability,framework] [--negative-control=true|false] [--tick-ac=true|false] [--comment-on-task=true|false] [--time-log=true|false] [--language=sk|en]"
-allowed-tools: [Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion, WebFetch]
+allowed-tools: [Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion, WebFetch, Skill]
 ---
 
 # Teamwork Task Tester
@@ -47,7 +47,9 @@ This skill is **read-only against Teamwork by default** for anything
 destructive — it does not move the task on the board, does not complete it, and
 does not post a comment unless the user opts in. Two things *are* written back
 by default:
-- a **time log** (QA is real work and should appear in the timesheet) — off with `--time-log=false`;
+- a **time log** (QA is real work and should appear in the timesheet) — in
+  whole 5-minute blocks under the `work-rules` time-logging rules, quick tasks
+  merged into one shared entry (Step 9.1); off with `--time-log=false`;
 - the **`- [x]` ticks** of acceptance criteria that were met (Step 9.3) — off with
   `--tick-ac=false`. This rewrite is bounded by a byte-exact safety contract: it
   may only flip `- [ ]` to `- [x]` inside the acceptance-criteria block and must
@@ -101,7 +103,7 @@ Optional flags (override config for this run only — not persisted):
 - `--negative-control=true|false` — prove each passing test is load-bearing by reverting the fix and watching it fail (default: `true`)
 - `--tick-ac=true|false` — tick met acceptance criteria to `- [x]` in the Teamwork description (default: `true`)
 - `--comment-on-task=true|false` — post the final report as a comment on each Teamwork task (default: `false`)
-- `--time-log=true|false` — write a time log to Teamwork for the QA work (default: `true`)
+- `--time-log=true|false` — write a time log to Teamwork for the QA work, in whole blocks (Step 9.1) (default: `true`)
 - `--language=sk|en` — language for the report and any AC suggestions (default: from config, fallback `sk`)
 - `--mode=…` — **ignored since 1.5.0**: this skill always runs full and the `work-mode` plugin does not affect it (Step 2.6). `--mode=full` (what `teamwork-task` passes) is accepted silently; any other value prints one `⚠` line. For a lighter run use the individual flags above.
 
@@ -237,6 +239,13 @@ chmod 600 "$CONFIG_FILE"
 
 CLI flags override `.test_skill.*` values for the duration of this run.
 
+**Time-log keys (v1.6.0).** The time log (Step 9.1) reads two keys:
+`test_skill.time_log` (on/off) and the top-level `time_rounding_minutes` that
+the file shares with `teamwork-task` — the block, default `5`. The shared keys
+`round_threshold_minutes` and `min_log_minutes` are **obsolete for this skill
+and ignored**: they allowed 1–4-minute entries, which the time-logging rules
+forbid. This skill neither reads nor deletes them.
+
 `test_skill.migrations` records the one-shot migrations that already ran (today
 only `1.2.0:review_dimensions+framework`). Leave it alone: deleting an entry
 re-runs that migration once, and it still touches only an untouched default.
@@ -286,6 +295,9 @@ instead.
 ---
 
 ## Step 3 — Fetch tasks via Teamwork REST API v3
+
+With the time log on, load the rules (`work-rules:wame-time-logging`) and run
+Step 9.1 (a) first — the QA time starts here.
 
 Same auth pattern as `teamwork-task`:
 
@@ -1243,28 +1255,49 @@ findings sit next to it without changing it, and the framework recommendations
 are not even counted as findings — a task with five ℹ️ recommendations and every
 criterion ✅ is `✅ PASSED`.
 
+With the time log on, the written report finishes the task's QA: run Step 9.1
+(b) and (c) with `MODE=task` now. After the last task run (c) with
+`MODE=flush`, then (d). A single-task run prints the (d) lines after this
+block.
+
 ---
 
 ## Step 8 — Tasklist summary (when `URL_KIND=tasklist`)
 
-After all tasks have been processed, render a summary table for the whole list:
+After all tasks have been processed — and after the end-of-run flush of the
+time log (Step 9.1 (c) with `MODE=flush`) — render a summary table for the
+whole list:
 
 ```markdown
 ## Tasklist summary — "<tasklist name>"
 
 | # | Task ID | Title                              | Status      | AC: ✅ / ⚠️ / ❌ / 📋 / 📝 | Tests | Time |
 |---|---------|------------------------------------|-------------|--------------------------|-------|------|
-| 1 | 44740914| Annual advance PDF restructure     | ✅ PASSED   | 6 / 0 / 0 / 1 / 0        | 8 ✅  | 15m  |
-| 2 | 44740916| Cent precision in Ročne column     | ⚠️ PARTIAL  | 3 / 1 / 0 / 1 / 1        | 4 ✅ 1 ⚠️ | 20m  |
-| 3 | 44740918| Indent MESAČNÝ heading             | 📋 MANUAL   | 0 / 0 / 0 / 2 / 0        | —     | 5m   |
+| 1 | 44740914| Annual advance PDF restructure     | ✅ PASSED   | 6 / 0 / 0 / 1 / 0        | 8 ✅  | 10:00–10:10 · 10 min |
+| 2 | 44740916| Cent precision in Ročne column     | ⚠️ PARTIAL  | 3 / 1 / 0 / 1 / 1        | 4 ✅ 1 ⚠️ | → #44740918 · 10:10–10:15 |
+| 3 | 44740918| Indent MESAČNÝ heading             | 📋 MANUAL   | 0 / 0 / 0 / 2 / 0        | —     | 10:10–10:15 · 5 min |
 
 **Totals**
 - Acceptance criteria: 12 ✅ verified ・ 1 ⚠️ partial ・ 0 ❌ failed ・ 4 📋 manual ・ 1 📝 proposed
 - Tests executed: 13 ✅ pass ・ 0 ❌ fail ・ 1 ⚠️ infra error
 - Framework recommendations: 4 ℹ️ (advisory — not counted in any status above)
-- Time logged to Teamwork: 40 min (if `--time-log=true`)
+- Time logged to Teamwork: 2 entries, 15 min (QA 12 + 2 + 4 min) — cursor 10:00 (last entry today ended 09:58 → 10:00)
+  - 10:00–10:10 · 10 min · #44740914
+  - 10:10–10:15 · 5 min · #44740918 · shared with #44740916
+  - cut, added by an edit, no entry: none
 - Comments posted to Teamwork: 0 (default) / 3 (if `--comment-on-task=true`)
 ```
+
+The **Time** column and the *Time logged* line come from Step 9.1 (d) and
+follow rules section 8: the task that owns an entry shows its start–end and
+minutes; a task that shares an entry shows `→ #<owner> · start–end`, so you can
+see which entry holds it; a task added to an earlier entry by an edit shows
+`→ entry <id>, added by an edit`; a task with no entry shows `—` and the reason
+(`— the timesheet is full until 10:15`, `— POST … → HTTP 422`). Under *Time
+logged* list where the cursor started and why, one row per entry (start–end ·
+minutes · owner · the other tasks in it), every cut (`20 → 15 min`, why), the
+tasks added by an edit and the tasks with no entry. With `--time-log=false` the
+column is `—` and the line says *time log off*.
 
 Followed by a short legend identical to the per-task one. Print this as the **last** thing in the run.
 
@@ -1274,25 +1307,292 @@ Followed by a short legend identical to the per-task one. Print this as the **la
 
 By default this skill is **read-only** against Teamwork. Two opt-in write-backs:
 
-### 9.1 Time log
+### 9.1 Time log — whole blocks, rules `wame-time-logging-v1` (v1.6.0)
 
-If `config.test_skill.time_log == true` (default) **and** the user did not pass `--time-log=false`, log a single time entry per task with the elapsed QA time. Reuse the **same sequential, non-overlapping cursor** logic as the `teamwork-task` plugin (Step 5.5 / 6.8 there) — the cursor lives in `SESSION_CURSOR_TS` and advances by exactly the logged duration after each successful POST. This is critical: a user who runs `/teamwork-task` and `/teamwork-task-test` back-to-back must not get overlapping timesheet rows.
+On when `config.test_skill.time_log == true` (default) and the user did not pass
+`--time-log=false`.
+
+**The rules come from the `work-rules` plugin.** The WAME time-logging rules —
+version `wame-time-logging-v1` — live in the `wame-time-logging` skill of the
+`work-rules` plugin, the one source for every plugin that writes time, whatever
+the tracker. Load them with the Skill tool (`work-rules:wame-time-logging`) at
+the start of the run, before (a) below and in any case before the first entry.
+This section is the Teamwork implementation of those rules for QA work; if the
+loaded skill names a newer rules version and differs from this section, follow
+the skill and say so in the run summary. This plugin declares `work-rules` in
+`dependencies`, so it is installed with it. If the skill is still not in the
+available-skills list, **log nothing**: run (a) and (b) as usual so the QA
+minutes are recorded, switch the run off with
+`printf '%s\n' 'work-rules is not installed — /plugin install work-rules@wame' > "$TT_RUN/off"`,
+and at the end tell the user to run `/plugin install work-rules@wame` and list
+the unlogged tasks — (d) prints them with their minutes. Never log from memory
+or from an older copy of the rules.
+
+The rules in four lines (the skill holds the detail and the reasons):
+- every entry is whole blocks (5, 10, 15 … min) and starts on the grid — never
+  a 1–4-minute entry;
+- QA of several tasks that together fit into one block becomes **one shared
+  entry** on the task with the most QA minutes, and its description names them all;
+- a leftover of even 1 minute at the end of the run is logged as one block;
+- no entry overlaps an entry of yours from the same day, and none ends after
+  the end of the current block.
+
+**Config.** Block = `time_rounding_minutes`, the top-level key of the config
+shared with `teamwork-task` (default `5`). `round_threshold_minutes` and
+`min_log_minutes` are obsolete here and ignored (they stay in the file;
+`teamwork-task` owns them). `test_skill.time_log` switches the log on and off.
+
+**Measured minutes = the QA time of one task**, rounded up to whole minutes. It
+starts where the QA of the previous task ended — for the first task, when (a)
+runs at the start of Step 3, so the fetch and the one-time Step 5 stack
+detection count to it — and it ends when the task's Step 7 report is written.
+Waiting for the user's answer (suggested criteria in Step 4.2, a blocker) is not
+QA time: right before an AskUserQuestion run `date +%s > "$TT_RUN/ask"`, right
+after the answer
+`printf '%s\n' $(( $(cat "$TT_RUN/wait") + $(date +%s) - $(cat "$TT_RUN/ask") )) > "$TT_RUN/wait"`.
+A task is **finished** when its Step 7 report is written. A task that is
+skipped, aborted or stopped on a blocker gets nothing — run
+`date +%s > "$TT_RUN/mark"; printf '0\n' > "$TT_RUN/wait"` so neither its
+minutes nor its waiting flow into the next task.
+
+**Run state** lives in a per-run directory that (a) creates — never a fixed
+`/tmp` path, because two sessions can run this skill at once. Every Bash call is
+a fresh shell: remember the `TT_RUN=…` line (a) prints and write it literally
+into each later snippet, after the Step 3 credential lines (`CONFIG_FILE`,
+`TOKEN`, `BASE`, `AUTH`).
+
+| File in `$TT_RUN` | Holds |
+|---|---|
+| `block`, `me`, `start_floor` | the block in minutes, your Teamwork user id, `floor(run start, block)` |
+| `mark`, `wait`, `ask` | where the current task's QA started; seconds spent waiting for the user |
+| `cursor`, `cursor_why` | the cursor (epoch) and why it starts where it does |
+| `bundle.jsonl` | finished tasks with no entry yet: `{id, name, min, done}` in the order they finished |
+| `entries.jsonl` | entries written: `{id, start, stop, minutes, owner, tasks, work, cut, desc}` |
+| `merged.jsonl`, `unlogged.jsonl` | tasks added to an earlier entry by an edit; tasks with no entry and why |
+| `off` | present → this run writes nothing; its text is the reason |
+
+**(a) Once, at the start of Step 3** (before the fetch — QA time starts here):
+
+```bash
+# --- 9.1 (a) time-log run state ---------------------------------------------
+# (Step 3 credential lines first: CONFIG_FILE, TOKEN, BASE, AUTH)
+TT_RUN=$(mktemp -d "${TMPDIR:-/tmp}/tw-test-time.XXXXXX") || exit 1
+BLOCK=$(jq -r '.time_rounding_minutes // 5' "$CONFIG_FILE")
+case "$BLOCK" in ''|*[!0-9]*|0) echo "⚠ time_rounding_minutes='$BLOCK' — using 5" >&2; BLOCK=5 ;; esac
+RESP=$(curl -sS -u "$AUTH" -H "Accept: application/json" -w '\n%{http_code}' "${BASE}/me.json")
+HTTP=${RESP##*$'\n'}; BODY=${RESP%$'\n'*}
+ME=$(jq -r '.person.id // empty' <<<"$BODY" 2>/dev/null)
+if [ "$HTTP" != "200" ] || [ -z "$ME" ]; then
+  printf 'GET /me.json → HTTP %s, your own entries cannot be read\n' "$HTTP" > "$TT_RUN/off"
+  echo "⚠ $(cat "$TT_RUN/off") — no time log this run" >&2
+fi
+NOW=$(date +%s)
+printf '%s\n' "$BLOCK" > "$TT_RUN/block"; printf '%s\n' "$ME" > "$TT_RUN/me"
+printf '%s\n' $(( NOW - NOW % (BLOCK * 60) )) > "$TT_RUN/start_floor"
+printf '%s\n' "$NOW" > "$TT_RUN/mark"; printf '0\n' > "$TT_RUN/wait"; : > "$TT_RUN/cursor"
+for F in bundle entries merged unlogged; do : > "$TT_RUN/$F.jsonl"; done
+echo "TT_RUN=$TT_RUN"
+```
+
+**(b) A task is finished** — right after its Step 7 report, in the same Bash
+call as (c) with `MODE=task`. `DONE` is one business sentence on what the QA
+showed, in `report_language` (see the examples below). The heredocs go to files,
+so quotes, apostrophes and parentheses in a title need no escaping:
+
+```bash
+# --- 9.1 (b) add the finished task to the bundle -----------------------------
+TT_RUN="<TT_RUN from (a)>"; TASK_ID="<task id>"
+cat > "$TT_RUN/name.txt" <<'TXT'
+<task title as in Teamwork>
+TXT
+cat > "$TT_RUN/done.txt" <<'TXT'
+<one business sentence on what the QA showed>
+TXT
+NOW=$(date +%s)
+MIN=$(( (NOW - $(cat "$TT_RUN/mark") - $(cat "$TT_RUN/wait") + 59) / 60 ))
+[ "$MIN" -ge 1 ] || MIN=1
+jq -nc --arg id "$TASK_ID" --argjson min "$MIN" --rawfile name "$TT_RUN/name.txt" --rawfile done "$TT_RUN/done.txt" \
+  '{id: $id, name: ($name | rtrimstr("\n")), min: $min, done: ($done | rtrimstr("\n"))}' >> "$TT_RUN/bundle.jsonl"
+printf '%s\n' "$NOW" > "$TT_RUN/mark"; printf '0\n' > "$TT_RUN/wait"
+echo "#$TASK_ID: $MIN min of QA → bundle"
+```
+
+**(c) Settle the bundle** — `MODE=task` right after (b); `MODE=flush` once after
+the last task, before the Step 8 summary:
+
+```bash
+# --- 9.1 (c) settle the bundle (rules sections 1–4) ----------------------------
+# (Step 3 credential lines first: CONFIG_FILE, TOKEN, BASE, AUTH)
+TT_RUN="<TT_RUN from (a)>"; MODE=task
+RLANG=$(jq -r '.test_skill.report_language // .default_language // "sk"' "$CONFIG_FILE")
+B="$TT_RUN/bundle.jsonl"; BLOCK=$(cat "$TT_RUN/block"); BS=$(( BLOCK * 60 ))
+hm() { date -r "$1" +%H:%M 2>/dev/null || date -d "@$1" +%H:%M; }
+unlogged() { jq -c --arg why "$1" '. + {why: $why}' "$B" >> "$TT_RUN/unlogged.jsonl"; : > "$B"; echo "⚠ no entry for $TASKS — $1" >&2; }
+giveup() { if [ "$MODE" = flush ]; then unlogged "$1"; else echo "⚠ $1 — $TASKS wait for the next try" >&2; fi; exit 0; }
+N=$(jq -s 'length' "$B"); TOTAL=$(jq -s 'map(.min) | add // 0' "$B"); TASKS=$(jq -rs 'map("#" + .id) | join(" ")' "$B")
+[ "$N" -gt 0 ] || { echo "bundle empty"; exit 0; }
+if [ "$MODE" = task ] && [ "$TOTAL" -lt "$BLOCK" ]; then echo "hold $TASKS: $TOTAL min, less than one block"; exit 0; fi
+[ ! -f "$TT_RUN/off" ] || giveup "$(cat "$TT_RUN/off")"
+# Minutes: the nearest block, half up; an end-of-run bundle below one block is one block.
+if [ "$TOTAL" -lt "$BLOCK" ]; then MINUTES=$BLOCK; else MINUTES=$(( (TOTAL + BLOCK / 2) / BLOCK * BLOCK )); fi
+
+# Re-read your last entry of today right before the write — another session may have logged.
+NOW=$(date +%s); TODAY=$(date +%Y-%m-%d); LIMIT=$(( (NOW + BS - 1) / BS * BS ))
+URL="${BASE}/projects/api/v3/time.json?assignedToUserIds=$(cat "$TT_RUN/me")&startDate=${TODAY}&orderBy=date&orderMode=desc&pageSize=1"
+RESP=$(curl -sS -u "$AUTH" -H "Accept: application/json" -w '\n%{http_code}' "$URL")
+HTTP=${RESP##*$'\n'}; BODY=${RESP%$'\n'*}
+if [ "$HTTP" != "200" ] || ! LAST=$(jq -r '.timelogs[0] // empty | "\(.timeLogged) \(.minutes // 0)"' <<<"$BODY"); then
+  giveup "GET time.json → HTTP $HTTP, your own entries cannot be read"
+fi
+END=""; END_UP=""
+if [ -n "$LAST" ]; then
+  T=$(printf '%s' "${LAST% *}" | sed -E 's/\.[0-9]+//; s/[+-]00:?00$/Z/')
+  S=$(date -ju -f '%Y-%m-%dT%H:%M:%SZ' "$T" +%s 2>/dev/null || date -u -d "$T" +%s 2>/dev/null)   # UTC
+  [ -n "$S" ] || giveup "timeLogged '$T' cannot be parsed"
+  END=$(( S + ${LAST##* } * 60 )); END_UP=$(( (END + BS - 1) / BS * BS ))
+fi
+CURSOR=$(cat "$TT_RUN/cursor")
+if [ -z "$CURSOR" ]; then          # rules section 1, decided at the first write of the run
+  if [ -n "$END_UP" ]; then CURSOR=$END_UP; printf 'last entry today ended %s → %s\n' "$(hm "$END")" "$(hm "$END_UP")" > "$TT_RUN/cursor_why"
+  else CURSOR=$(cat "$TT_RUN/start_floor"); printf 'first entry today → %s\n' "$(hm "$CURSOR")" > "$TT_RUN/cursor_why"; fi
+elif [ -n "$END_UP" ] && [ "$END_UP" -gt "$CURSOR" ]; then
+  echo "⚠ another entry ends at $(hm "$END") — cursor $(hm "$CURSOR") → $(hm "$END_UP")"; CURSOR=$END_UP
+fi
+printf '%s\n' "$CURSOR" > "$TT_RUN/cursor"
+ROOM=0; [ "$LIMIT" -le "$CURSOR" ] || ROOM=$(( (LIMIT - CURSOR) / BS * BLOCK ))
+
+if [ "$ROOM" -eq 0 ]; then
+  [ "$MODE" = flush ] || { echo "hold $TASKS: no room — cursor $(hm "$CURSOR"), current block ends $(hm "$LIMIT")"; exit 0; }
+  # End of run, no room: add the tasks to the description of this run's last entry.
+  LAST_ENTRY=$(tail -n 1 "$TT_RUN/entries.jsonl"); ID=$(jq -r '.id // empty' <<<"${LAST_ENTRY:-null}")
+  [ -n "$ID" ] || { unlogged "the timesheet is full until $(hm "$CURSOR")"; exit 0; }
+  jq -n --argjson e "$LAST_ENTRY" --slurpfile t "$B" --arg l "$RLANG" '{timelog: {description:
+    ($e.desc + "\n" + ($t | map((if $l == "en" then "Also includes: " else "Patrí sem aj: " end) + "#\(.id) \(.name) — \(.done)") | join("\n")))}}' > "$TT_RUN/patch.json"
+  RESP=$(curl -sS -u "$AUTH" -H "Content-Type: application/json" -H "Accept: application/json" \
+    -X PATCH --data-binary "@$TT_RUN/patch.json" -w '\n%{http_code}' "${BASE}/projects/api/v3/time/${ID}.json")
+  HTTP=${RESP##*$'\n'}
+  case "$HTTP" in
+    2??) jq -sc --arg into "$ID" '{into: $into, tasks: map(.id)}' "$B" >> "$TT_RUN/merged.jsonl"; : > "$B"
+         echo "no room — $TASKS added to the description of entry $ID, minutes unchanged" ;;
+    *)   unlogged "no room, and PATCH time/$ID.json → HTTP $HTTP" ;;
+  esac
+  exit 0
+fi
+CUT=""
+if [ "$ROOM" -lt "$MINUTES" ]; then CUT="$MINUTES → $ROOM min, the cursor reached the current block"; MINUTES=$ROOM; fi
+
+# Owner = most measured minutes, a tie goes to the task finished last. Description: rules section 4.
+OWNER=$(jq -rs 'to_entries | max_by([.value.min, .key]) | .value.id' "$B")
+DESC=$(jq -rs --arg o "$OWNER" --arg l "$RLANG" '
+  if length == 1 then .[0].done
+  else (if $l == "en" then "Shared entry for \(length) tasks (\(map(.min) | add) min of work in total):"
+        else "Spoločný záznam za \(length) \(if length < 5 then "úlohy" else "úloh" end) (spolu \(map(.min) | add) min práce):" end)
+       + "\n" + ((map(select(.id == $o)) + map(select(.id != $o))) | map("#\(.id) \(.name) — \(.done)") | join("\n"))
+  end' "$B")
+DAY=$(date -r "$CURSOR" +%Y-%m-%d 2>/dev/null || date -d "@$CURSOR" +%Y-%m-%d)
+AT=$(date -r "$CURSOR" +%H:%M:%S 2>/dev/null || date -d "@$CURSOR" +%H:%M:%S)     # LOCAL, see the TIMEZONE CONTRACT
+BILL=$(jq '.is_billable_by_default | if . == null then true else . end' "$CONFIG_FILE")
+jq -n --argjson m "$MINUTES" --arg d "$DESC" --arg day "$DAY" --arg at "$AT" --argjson b "$BILL" \
+  '{timelog: {hours: 0, minutes: $m, description: $d, date: $day, time: $at, isbillable: $b}}' > "$TT_RUN/post.json"
+RESP=$(curl -sS -u "$AUTH" -H "Content-Type: application/json" -H "Accept: application/json" \
+  -X POST --data-binary "@$TT_RUN/post.json" -w '\n%{http_code}' "${BASE}/projects/api/v3/tasks/${OWNER}/time.json")
+HTTP=${RESP##*$'\n'}; BODY=${RESP%$'\n'*}
+case "$HTTP" in
+  2??) STOP=$(( CURSOR + MINUTES * 60 )); printf '%s\n' "$STOP" > "$TT_RUN/cursor"
+       jq -sc --arg id "$(jq -r '.timelog.id // empty' <<<"$BODY" 2>/dev/null)" --arg s "$(hm "$CURSOR")" --arg e "$(hm "$STOP")" \
+         --argjson m "$MINUTES" --arg o "$OWNER" --arg cut "$CUT" --arg d "$DESC" \
+         '{id: $id, start: $s, stop: $e, minutes: $m, owner: $o, tasks: map(.id), work: (map(.min) | add), cut: $cut, desc: $d}' "$B" >> "$TT_RUN/entries.jsonl"
+       : > "$B"; echo "logged $(hm "$CURSOR")–$(hm "$STOP") · $MINUTES min · #$OWNER · $TASKS${CUT:+ · cut $CUT}" ;;
+  *)   unlogged "POST tasks/$OWNER/time.json → HTTP $HTTP, the cursor stays at $(hm "$CURSOR")" ;;
+esac
+```
+
+What (c) does, in the words of the rules:
+
+- **Hold.** `MODE=task` with less than one block in the bundle writes nothing;
+  the tasks wait for the next task or the end of the run.
+- **Cursor** (section 1). Decided at the first write of the run: the end of
+  your last entry today (`timeLogged` parsed as **UTC**, plus `minutes`) moved
+  **up** to the grid; with no entry today, `floor(run start, block)`. An end
+  after the limit still wins — nothing fits until the clock catches up. Before
+  every later write the same GET runs again, and an entry somebody logged in
+  the meantime moves the cursor forward, never back. After a successful POST
+  the cursor moves by the logged minutes; after a failed one it stays, the
+  tasks go to `unlogged.jsonl` with the HTTP status, and nothing is retried.
+- **Minutes and room** (section 3). The nearest block, half up
+  (`((total + block/2) / block) * block`: 5 → 5, 7 → 5, 8 → 10, 12 → 10,
+  13 → 15); `room = floor((limit − cursor) / block) * block` with
+  `limit = ceil(now, block)`. Room ≥ minutes → write them; 0 < room < minutes
+  → write `room` and keep the cut for the summary; room 0 → `MODE=task` holds,
+  `MODE=flush` adds the tasks to the description of the last entry this run
+  wrote (`PATCH`, the minutes stay), and when this run wrote none, names them
+  in the summary with *"the timesheet is full until HH:MM"*.
+- **Owner** — the task with the most measured minutes; a tie goes to the one
+  finished last. **Start** = the cursor, **date** = its local date.
+- **Description** (section 4). One task → its `DONE` sentence. Two or more →
+  the shared entry: a first line with the count and the real QA minutes, then
+  one line per task, the owner first, the rest in the order they finished.
+- **End of the run.** A bundle that is not empty is written even when it holds
+  1 minute — as one block.
 
 > **TIMEZONE CONTRACT (critical).** Teamwork's time API is asymmetric: `GET …/time.json`
 > returns `timeLogged` in **UTC** (trailing `Z`), but the **POST/PATCH `time` field is
-> interpreted in the user's LOCAL/profile timezone**. When you reuse the `teamwork-task`
-> cursor logic, parse `timeLogged` as UTC (`date -ju -f "…Z"` — the `-u` is mandatory on
-> macOS, the trailing `Z` is a literal, not a zone directive) but format the POST `time`
-> in LOCAL (`date -r "$TS" +%H:%M:%S`, **no** `-u`). Mixing them up shifts every QA entry
-> by the local offset, so logs land hours early and overlap the implementation entries.
-> If you ever need to correct a misplaced entry, `PATCH …/projects/api/v3/time/{id}.json`
-> with `{"timelog":{"time":"HH:MM:SS"}}` (local time).
+> interpreted in the user's LOCAL/profile timezone**. Parse `timeLogged` as UTC
+> (`date -ju -f "…Z"` — the `-u` is mandatory on macOS, the trailing `Z` is a literal,
+> not a zone directive) but format the POST `time` in LOCAL (`date -r "$TS" +%H:%M:%S`,
+> **no** `-u`). Mixing them up shifts every QA entry by the local offset, so logs land
+> hours early and overlap the implementation entries `teamwork-task` wrote. Correct a
+> misplaced entry by editing it — `PATCH …/projects/api/v3/time/{id}.json` with
+> `{"timelog":{"time":"HH:MM:SS"}}` (local time) — never by deleting and re-creating it.
 
-Description tone: business, in `config.test_skill.report_language` (default `sk`). Examples (Slovak):
-- *"Otestované akceptačné kritériá pre modul Faktúry — 6/7 splnených, 1 manuálny scenár."*
-- *"QA pas pre Stornovať akciu — všetky AC overené Pestom."*
+Description tone: business — what was verified and how it came out, not how —
+in `config.test_skill.report_language` (default `sk`). Examples (Slovak):
+- one task: *"Otestované akceptačné kritériá pre modul Faktúry — 6/7 splnených, 1 manuálny scenár."*
+- a shared entry:
+  ```
+  Spoločný záznam za 3 úlohy (spolu 6 min práce):
+  #45522728 Priradenie úlohy viacerým ľuďom — Otestované 4 akceptačné kritériá, všetky splnené.
+  #45522670 Hashované heslo IMAP — Overená akcia Test pripojenia.
+  #45522683 Neznámy kód poschodia — Overené hlásenie v reporte importu.
+  ```
+- added at the end of the run with no room: `Patrí sem aj: #<id> <názov> — <čo sa overilo>`.
 
-Endpoint: `POST ${BASE}/projects/api/v3/tasks/${TASK_ID}/time.json` — same payload shape as the `teamwork-task` plugin.
+**(d) Run summary** (rules section 8) — after the flush. It feeds the Step 8
+Time column and *Time logged* line, and for a single-task run it is printed
+after the per-task report:
+
+```bash
+# --- 9.1 (d) what was logged -------------------------------------------------
+TT_RUN="<TT_RUN from (a)>"
+[ -s "$TT_RUN/cursor_why" ] && printf 'cursor: %s\n' "$(cat "$TT_RUN/cursor_why")" || echo "cursor: not set — no entry was attempted"
+jq -r '"\(.start)–\(.stop) · \(.minutes) min · #\(.owner)"
+  + (if (.tasks | length) > 1 then " · shared with " + (.tasks - [.owner] | map("#" + .) | join(", ")) else "" end)
+  + (if .cut != "" then " · cut " + .cut else "" end)' "$TT_RUN/entries.jsonl"
+jq -r '"added to entry \(.into) by an edit: " + (.tasks | map("#" + .) | join(", "))' "$TT_RUN/merged.jsonl"
+jq -r '"no entry: #\(.id) (\(.min) min of QA) — \(.why)"' "$TT_RUN/unlogged.jsonl"
+# Step 8 Time column, one line per task: <id> TAB <cell>
+jq -r '. as $e | .tasks[] | [., (if . == $e.owner then "\($e.start)–\($e.stop) · \($e.minutes) min" else "→ #\($e.owner) · \($e.start)–\($e.stop)" end)] | @tsv' "$TT_RUN/entries.jsonl"
+jq -r '. as $m | .tasks[] | [., "→ entry \($m.into), added by an edit"] | @tsv' "$TT_RUN/merged.jsonl"
+jq -r '[.id, "— \(.why)"] | @tsv' "$TT_RUN/unlogged.jsonl"
+```
+
+**The user gives a start time** (`loguj od 13:00`, `čas od 13:00`): rules
+section 5 replaces (c). Run (a) and (b) as usual but never (c). After the last
+task: span = from the given start moved up to the grid to `ceil(now, block)`,
+blocks = span / block; if an entry of yours already lies inside the span, stop
+and ask. Split the blocks across the finished tasks in proportion to their
+Teamwork `estimateMinutes` (no estimate → the measured minutes) by largest
+remainder, as the rules describe; a task with 0 blocks is named in the entry
+with the most blocks in the shared format. Show the table — task, estimate,
+blocks, start–end — and only after the user's OK POST the entries back to back
+from the start, with the payload of (c) and the GET of (c) right before each
+POST.
+
+Endpoints: `GET ${BASE}/me.json` (`.person.id`) ·
+`GET ${BASE}/projects/api/v3/time.json?assignedToUserIds=<me>&…` — the filter
+must be `assignedToUserIds`; `userId` silently returns the whole company ·
+`POST ${BASE}/projects/api/v3/tasks/{owner}/time.json` ·
+`PATCH ${BASE}/projects/api/v3/time/{id}.json`.
 
 ### 9.2 Comment on the task
 

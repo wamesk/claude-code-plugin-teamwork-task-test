@@ -5,6 +5,61 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-10-16
+
+QA entries of 2–3 minutes showed up on the timesheet. Step 9.1 reused the
+cursor logic of `teamwork-task` 1.3.0+, which logs work below 4 minutes as raw
+1–3 minutes and cuts an entry to the exact free minutes — so a tasklist of quick
+QA passes became a row of tiny entries. The WAME time-logging rules now live in
+one tracker-independent place, the `work-rules` plugin (skill
+`wame-time-logging`, rules `wame-time-logging-v1`), and say: whole 5-minute
+blocks only; quick tasks share one block with a description that names them
+all; a leftover of even 1 minute is one block. 1.6.0 implements exactly those
+rules for QA work and no longer points at `teamwork-task`'s internals.
+
+### Changed
+
+- **Step 9.1 rewritten to stand on its own.** It loads the rules with the Skill
+  tool (`work-rules:wame-time-logging`) at the start of the run; without the
+  skill it logs nothing and names the unlogged tasks, with a pointer to
+  `/plugin install work-rules@wame`. Measured minutes are the QA time of each
+  task — from where the previous task's QA ended (the first task: the start of
+  Step 3) to its written Step 7 report, minus the time spent waiting for the
+  user's answers.
+- **Cursor** (rules section 1): the end of your last entry today
+  (`GET /projects/api/v3/time.json?assignedToUserIds=…`, `timeLogged` parsed as
+  UTC, plus `minutes`), moved up to the 5-minute grid; with no entry today,
+  the run start floored to the grid. The last entry is re-read right before
+  every POST, so an entry another session wrote meanwhile moves the cursor
+  forward instead of being overlapped.
+- **Bundle across the tasks of the run** (rules sections 2–4): less than one
+  block waits for the next task; one block or more is written as one entry —
+  the nearest block, half up — on the task with the most QA minutes (a tie goes
+  to the task finished last), with the shared description `Spoločný záznam za
+  N úlohy (spolu M min práce):` and one line per task. The entry never ends
+  after the end of the current block (`room` cut, reported). At the end of the
+  run a remaining bundle is written as one block; with no room it is added to
+  the description of the run's last entry by a `PATCH`, or named in the
+  summary with the reason.
+- **Step 8 summary** follows rules section 8: the Time column shows the entry
+  each task sits in (`→ #<owner> · start–end` for a task in a shared entry),
+  and *Time logged to Teamwork* lists where the cursor started and why, one
+  row per entry, the cuts, the tasks added by an edit and the tasks with no
+  entry.
+- **Run files** live in a per-run `mktemp -d` directory instead of a fixed
+  `/tmp` path; the snippets are short and portable (zsh and bash 3.2,
+  here-strings instead of `echo` pipes) and were checked against every worked
+  example in rules section 9.
+- **Config:** the time log reads only `test_skill.time_log` and the shared
+  `time_rounding_minutes` (the block, default `5`, now also in
+  `config.example.json`). The shared keys `round_threshold_minutes` and
+  `min_log_minutes` are ignored — they exist to allow sub-block entries.
+
+### Added
+
+- `"dependencies": ["work-rules"]` in `plugin.json`, and `Skill` in the
+  skill's `allowed-tools`, to load the rules.
+
 ## [1.5.1] — 2026-10-12
 
 ### Changed
