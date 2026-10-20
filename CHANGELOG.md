@@ -5,6 +5,21 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] — 2026-10-20
+
+Task ids in a time-entry description are written in parentheses, `(45504762)`, the
+same way as commits — not as `#45504762`. Teamwork reads a `#word` of a new entry as a
+hashtag: it cut the id out of the text and created a global tag with that name, so
+17 shared entries of 2026-10-19/20 lost their task references and the tag list
+filled with 25 numbers and one colour (`#22c55e`). Follows `work-rules` 1.0.1
+(`wame-time-logging` section 4).
+
+### Fixed
+
+- Step 9.1 (c) writes `(<id>) <name> — <done>` lines in a shared entry and in the
+  `Patrí sem aj:` / `Also includes:` lines, and drops a `#` that stands right before a
+  letter or a digit from the description before the `POST` and the `PATCH`.
+
 ## [1.6.0] — 2026-10-16
 
 QA entries of 2–3 minutes showed up on the timesheet. Step 9.1 reused the

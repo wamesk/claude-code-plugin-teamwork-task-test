@@ -1467,7 +1467,8 @@ if [ "$ROOM" -eq 0 ]; then
   LAST_ENTRY=$(tail -n 1 "$TT_RUN/entries.jsonl"); ID=$(jq -r '.id // empty' <<<"${LAST_ENTRY:-null}")
   [ -n "$ID" ] || { unlogged "the timesheet is full until $(hm "$CURSOR")"; exit 0; }
   jq -n --argjson e "$LAST_ENTRY" --slurpfile t "$B" --arg l "$RLANG" '{timelog: {description:
-    ($e.desc + "\n" + ($t | map((if $l == "en" then "Also includes: " else "Patrí sem aj: " end) + "#\(.id) \(.name) — \(.done)") | join("\n")))}}' > "$TT_RUN/patch.json"
+    (($e.desc + "\n" + ($t | map((if $l == "en" then "Also includes: " else "Patrí sem aj: " end) + "(\(.id)) \(.name) — \(.done)") | join("\n")))
+     | gsub("#+(?<c>[\\p{L}\\p{N}])"; "\(.c)"))}}' > "$TT_RUN/patch.json"
   RESP=$(curl -sS -u "$AUTH" -H "Content-Type: application/json" -H "Accept: application/json" \
     -X PATCH --data-binary "@$TT_RUN/patch.json" -w '\n%{http_code}' "${BASE}/projects/api/v3/time/${ID}.json")
   HTTP=${RESP##*$'\n'}
@@ -1481,14 +1482,16 @@ fi
 CUT=""
 if [ "$ROOM" -lt "$MINUTES" ]; then CUT="$MINUTES → $ROOM min, the cursor reached the current block"; MINUTES=$ROOM; fi
 
-# Owner = most measured minutes, a tie goes to the task finished last. Description: rules section 4.
+# Owner = most measured minutes, a tie goes to the task finished last. Description: rules section 4 —
+# task ids in parentheses, and no "#" right before a letter or a digit: Teamwork turns "#45504762"
+# or "#22c55e" of a new entry into a global tag and cuts it from the text.
 OWNER=$(jq -rs 'to_entries | max_by([.value.min, .key]) | .value.id' "$B")
 DESC=$(jq -rs --arg o "$OWNER" --arg l "$RLANG" '
   if length == 1 then .[0].done
   else (if $l == "en" then "Shared entry for \(length) tasks (\(map(.min) | add) min of work in total):"
         else "Spoločný záznam za \(length) \(if length < 5 then "úlohy" else "úloh" end) (spolu \(map(.min) | add) min práce):" end)
-       + "\n" + ((map(select(.id == $o)) + map(select(.id != $o))) | map("#\(.id) \(.name) — \(.done)") | join("\n"))
-  end' "$B")
+       + "\n" + ((map(select(.id == $o)) + map(select(.id != $o))) | map("(\(.id)) \(.name) — \(.done)") | join("\n"))
+  end | gsub("#+(?<c>[\\p{L}\\p{N}])"; "\(.c)")' "$B")
 DAY=$(date -r "$CURSOR" +%Y-%m-%d 2>/dev/null || date -d "@$CURSOR" +%Y-%m-%d)
 AT=$(date -r "$CURSOR" +%H:%M:%S 2>/dev/null || date -d "@$CURSOR" +%H:%M:%S)     # LOCAL, see the TIMEZONE CONTRACT
 BILL=$(jq '.is_billable_by_default | if . == null then true else . end' "$CONFIG_FILE")
@@ -1551,11 +1554,13 @@ in `config.test_skill.report_language` (default `sk`). Examples (Slovak):
 - a shared entry:
   ```
   Spoločný záznam za 3 úlohy (spolu 6 min práce):
-  #45522728 Priradenie úlohy viacerým ľuďom — Otestované 4 akceptačné kritériá, všetky splnené.
-  #45522670 Hashované heslo IMAP — Overená akcia Test pripojenia.
-  #45522683 Neznámy kód poschodia — Overené hlásenie v reporte importu.
+  (45522728) Priradenie úlohy viacerým ľuďom — Otestované 4 akceptačné kritériá, všetky splnené.
+  (45522670) Hashované heslo IMAP — Overená akcia Test pripojenia.
+  (45522683) Neznámy kód poschodia — Overené hlásenie v reporte importu.
   ```
-- added at the end of the run with no room: `Patrí sem aj: #<id> <názov> — <čo sa overilo>`.
+- added at the end of the run with no room: `Patrí sem aj: (<id>) <názov> — <čo sa overilo>`.
+- never `#<id>` or any other `#word` (a colour `#22c55e`): Teamwork makes a global
+  tag of it and cuts it from the text. The snippet drops such a `#` itself.
 
 **(d) Run summary** (rules section 8) — after the flush. It feeds the Step 8
 Time column and *Time logged* line, and for a single-task run it is printed
