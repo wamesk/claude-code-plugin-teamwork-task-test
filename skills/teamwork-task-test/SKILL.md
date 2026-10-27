@@ -1307,13 +1307,13 @@ Followed by a short legend identical to the per-task one. Print this as the **la
 
 By default this skill is **read-only** against Teamwork. Two opt-in write-backs:
 
-### 9.1 Time log — whole blocks, rules `wame-time-logging-v1` (v1.6.0)
+### 9.1 Time log — whole blocks, rules `wame-time-logging-v2` (v1.6.0)
 
 On when `config.test_skill.time_log == true` (default) and the user did not pass
 `--time-log=false`.
 
 **The rules come from the `work-rules` plugin.** The WAME time-logging rules —
-version `wame-time-logging-v1` — live in the `wame-time-logging` skill of the
+version `wame-time-logging-v2` — live in the `wame-time-logging` skill of the
 `work-rules` plugin, the one source for every plugin that writes time, whatever
 the tracker. Load them with the Skill tool (`work-rules:wame-time-logging`) at
 the start of the run, before (a) below and in any case before the first entry.
@@ -1332,7 +1332,8 @@ The rules in four lines (the skill holds the detail and the reasons):
 - every entry is whole blocks (5, 10, 15 … min) and starts on the grid — never
   a 1–4-minute entry;
 - QA of several tasks that together fit into one block becomes **one shared
-  entry** on the task with the most QA minutes, and its description names them all;
+  entry** on the task with the most QA minutes, and its short description names
+  them all and states no minutes;
 - a leftover of even 1 minute at the end of the run is logged as one block;
 - no entry overlaps an entry of yours from the same day, and none ends after
   the end of the current block.
@@ -1395,8 +1396,9 @@ echo "TT_RUN=$TT_RUN"
 ```
 
 **(b) A task is finished** — right after its Step 7 report, in the same Bash
-call as (c) with `MODE=task`. `DONE` is one business sentence on what the QA
-showed, in `report_language` (see the examples below). The heredocs go to files,
+call as (c) with `MODE=task`. `DONE` is one short business sentence on what the
+QA showed — about 10–12 words, no minutes — in `report_language` (see the
+examples below). The heredocs go to files,
 so quotes, apostrophes and parentheses in a title need no escaping:
 
 ```bash
@@ -1406,7 +1408,7 @@ cat > "$TT_RUN/name.txt" <<'TXT'
 <task title as in Teamwork>
 TXT
 cat > "$TT_RUN/done.txt" <<'TXT'
-<one business sentence on what the QA showed>
+<one short sentence, about 10–12 words, on what the QA showed — no minutes>
 TXT
 NOW=$(date +%s)
 MIN=$(( (NOW - $(cat "$TT_RUN/mark") - $(cat "$TT_RUN/wait") + 59) / 60 ))
@@ -1427,6 +1429,16 @@ TT_RUN="<TT_RUN from (a)>"; MODE=task
 RLANG=$(jq -r '.test_skill.report_language // .default_language // "sk"' "$CONFIG_FILE")
 B="$TT_RUN/bundle.jsonl"; BLOCK=$(cat "$TT_RUN/block"); BS=$(( BLOCK * 60 ))
 hm() { date -r "$1" +%H:%M 2>/dev/null || date -d "@$1" +%H:%M; }
+# Short label of a task (rules section 4): its code — the text before the first " — ", when that is
+# one word of at most 20 characters ("M3.11.2") — else the title cut to about 40 characters at a word
+# boundary, "…" appended when cut. Codepoint-safe for diacritics; used by the description and the PATCH.
+LABEL_DEF='def short_label:
+  (if contains(" — ") then split(" — ")[0] else "" end) as $p
+  | if ($p | test("^\\S{1,20}$")) then $p
+    elif length <= 40 then .
+    else (.[0:41] | sub(" +[^ ]*$"; "")) as $c
+      | (if ($c | length) > 40 then .[0:40] else $c end) + "…"
+    end;'
 unlogged() { jq -c --arg why "$1" '. + {why: $why}' "$B" >> "$TT_RUN/unlogged.jsonl"; : > "$B"; echo "⚠ no entry for $TASKS — $1" >&2; }
 giveup() { if [ "$MODE" = flush ]; then unlogged "$1"; else echo "⚠ $1 — $TASKS wait for the next try" >&2; fi; exit 0; }
 N=$(jq -s 'length' "$B"); TOTAL=$(jq -s 'map(.min) | add // 0' "$B"); TASKS=$(jq -rs 'map("#" + .id) | join(" ")' "$B")
@@ -1466,8 +1478,8 @@ if [ "$ROOM" -eq 0 ]; then
   # End of run, no room: add the tasks to the description of this run's last entry.
   LAST_ENTRY=$(tail -n 1 "$TT_RUN/entries.jsonl"); ID=$(jq -r '.id // empty' <<<"${LAST_ENTRY:-null}")
   [ -n "$ID" ] || { unlogged "the timesheet is full until $(hm "$CURSOR")"; exit 0; }
-  jq -n --argjson e "$LAST_ENTRY" --slurpfile t "$B" --arg l "$RLANG" '{timelog: {description:
-    (($e.desc + "\n" + ($t | map((if $l == "en" then "Also includes: " else "Patrí sem aj: " end) + "(\(.id)) \(.name) — \(.done)") | join("\n")))
+  jq -n --argjson e "$LAST_ENTRY" --slurpfile t "$B" --arg l "$RLANG" "$LABEL_DEF"'{timelog: {description:
+    (($e.desc + "\n" + ($t | map((if $l == "en" then "Also includes: " else "Patrí sem aj: " end) + "(\(.id)) \(.name | short_label) — \(.done)") | join("\n")))
      | gsub("#+(?<c>[\\p{L}\\p{N}])"; "\(.c)"))}}' > "$TT_RUN/patch.json"
   RESP=$(curl -sS -u "$AUTH" -H "Content-Type: application/json" -H "Accept: application/json" \
     -X PATCH --data-binary "@$TT_RUN/patch.json" -w '\n%{http_code}' "${BASE}/projects/api/v3/time/${ID}.json")
@@ -1486,11 +1498,12 @@ if [ "$ROOM" -lt "$MINUTES" ]; then CUT="$MINUTES → $ROOM min, the cursor reac
 # task ids in parentheses, and no "#" right before a letter or a digit: Teamwork turns "#45504762"
 # or "#22c55e" of a new entry into a global tag and cuts it from the text.
 OWNER=$(jq -rs 'to_entries | max_by([.value.min, .key]) | .value.id' "$B")
-DESC=$(jq -rs --arg o "$OWNER" --arg l "$RLANG" '
+# Short (rules section 4): no minutes anywhere, one line per task — "(id) <short label> — <done>".
+DESC=$(jq -rs --arg o "$OWNER" --arg l "$RLANG" "$LABEL_DEF"'
   if length == 1 then .[0].done
-  else (if $l == "en" then "Shared entry for \(length) tasks (\(map(.min) | add) min of work in total):"
-        else "Spoločný záznam za \(length) \(if length < 5 then "úlohy" else "úloh" end) (spolu \(map(.min) | add) min práce):" end)
-       + "\n" + ((map(select(.id == $o)) + map(select(.id != $o))) | map("(\(.id)) \(.name) — \(.done)") | join("\n"))
+  else (if $l == "en" then "Shared entry for \(length) tasks:"
+        else "Spoločný záznam za \(length) \(if length < 5 then "úlohy" else "úloh" end):" end)
+       + "\n" + ((map(select(.id == $o)) + map(select(.id != $o))) | map("(\(.id)) \(.name | short_label) — \(.done)") | join("\n"))
   end | gsub("#+(?<c>[\\p{L}\\p{N}])"; "\(.c)")' "$B")
 DAY=$(date -r "$CURSOR" +%Y-%m-%d 2>/dev/null || date -d "@$CURSOR" +%Y-%m-%d)
 AT=$(date -r "$CURSOR" +%H:%M:%S 2>/dev/null || date -d "@$CURSOR" +%H:%M:%S)     # LOCAL, see the TIMEZONE CONTRACT
@@ -1533,8 +1546,12 @@ What (c) does, in the words of the rules:
 - **Owner** — the task with the most measured minutes; a tie goes to the one
   finished last. **Start** = the cursor, **date** = its local date.
 - **Description** (section 4). One task → its `DONE` sentence. Two or more →
-  the shared entry: a first line with the count and the real QA minutes, then
-  one line per task, the owner first, the rest in the order they finished.
+  the shared entry: a first line with the number of tasks and **no minutes**,
+  then one line per task, `(id) <short label> — <what the QA showed>`, the owner
+  first, the rest in the order they finished. The short label is the task's code
+  (the text before the first ` — `, when it is one word) or the title cut to about
+  40 characters — never the full title, never two sentences. A single task is
+  one sentence of about 12 words.
 - **End of the run.** A bundle that is not empty is written even when it holds
   1 minute — as one block.
 
@@ -1548,17 +1565,21 @@ What (c) does, in the words of the rules:
 > misplaced entry by editing it — `PATCH …/projects/api/v3/time/{id}.json` with
 > `{"timelog":{"time":"HH:MM:SS"}}` (local time) — never by deleting and re-creating it.
 
-Description tone: business — what was verified and how it came out, not how —
-in `config.test_skill.report_language` (default `sk`). Examples (Slovak):
-- one task: *"Otestované akceptačné kritériá pre modul Faktúry — 6/7 splnených, 1 manuálny scenár."*
+Description tone: business and **short** — what was verified and how it came out,
+not how, in `config.test_skill.report_language` (default `sk`). It never states
+the QA time: no `spolu 19 min práce`, no `(12 min)` — the entry's own minutes say
+it. The detail belongs in the Step 7 report, not on the timesheet row. Examples
+(Slovak):
+- one task: *"Otestované kritériá modulu Faktúry — 6/7 splnených, 1 manuálny scenár."*
 - a shared entry:
   ```
-  Spoločný záznam za 3 úlohy (spolu 6 min práce):
-  (45522728) Priradenie úlohy viacerým ľuďom — Otestované 4 akceptačné kritériá, všetky splnené.
-  (45522670) Hashované heslo IMAP — Overená akcia Test pripojenia.
-  (45522683) Neznámy kód poschodia — Overené hlásenie v reporte importu.
+  Spoločný záznam za 3 úlohy:
+  (45522728) Priradenie úlohy viacerým ľuďom — QA: 4/4 kritériá splnené
+  (45522670) M3.2.4 — QA: overená akcia Test pripojenia
+  (45522683) Neznámy kód poschodia — QA: 3/3, hlásenie v importe overené
   ```
-- added at the end of the run with no room: `Patrí sem aj: (<id>) <názov> — <čo sa overilo>`.
+- added at the end of the run with no room: `Patrí sem aj: (<id>) <krátky názov> — <čo sa overilo>`
+  (the same short line).
 - never `#<id>` or any other `#word` (a colour `#22c55e`): Teamwork makes a global
   tag of it and cuts it from the text. The snippet drops such a `#` itself.
 

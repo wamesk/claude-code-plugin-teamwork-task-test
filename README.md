@@ -24,12 +24,14 @@ a single run — a missing one is asked about once and, on yes, added to the
 project permanently.
 
 **QA time in whole 5-minute blocks (1.6.0).** The QA time log follows the WAME
-time-logging rules `wame-time-logging-v1` from the `work-rules` plugin
+time-logging rules `wame-time-logging-v2` from the `work-rules` plugin
 (skill `wame-time-logging`), the same rules every WAME plugin that writes time
 uses. Every entry is whole blocks (5, 10, 15 … min) on the 5-minute grid —
 never a 2- or 3-minute entry. QA of quick tasks that fit into one block
 together goes into **one shared entry** on the task with the most QA minutes,
-and its description names every task in it; a leftover of even 1 minute at the
+and its description names every task in it — short (`Spoločný záznam za N úlohy:`
+and one `(id) <code or short label> — <what the QA showed>` line per task) and
+**never stating minutes**, since 1.6.2; a leftover of even 1 minute at the
 end of the run is logged as 5 minutes. Entries continue from your last entry of
 the day, never overlap one (the last entry is re-read before every write), and
 never end after the current 5-minute block. The tasklist summary shows which
@@ -45,7 +47,7 @@ entry holds each task.
 (If you already added the WAME marketplace, only the second line is needed.)
 
 The plugin requires the `work-rules` plugin (skill `wame-time-logging`, the
-time-logging rules `wame-time-logging-v1`). It is declared in `dependencies`,
+time-logging rules `wame-time-logging-v2`). It is declared in `dependencies`,
 so it installs together with this plugin; if it is missing, run
 `/plugin install work-rules@wame` — until then the QA pass still runs, but no
 time is logged and the summary lists the unlogged tasks.

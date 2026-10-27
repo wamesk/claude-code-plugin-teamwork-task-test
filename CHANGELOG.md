@@ -5,6 +5,26 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] — 2026-10-27
+
+A QA entry stated `spolu 19 min práce` in its description and repeated the full task
+titles with long sentences, so a timesheet row read like a report. The description of a
+QA time entry now says what the QA showed, briefly, and never the QA time — the minutes
+of the entry already say it. Follows `work-rules` 1.1.0 (rules `wame-time-logging-v2`,
+section 4).
+
+### Changed
+
+- Step 9.1 (c): the shared-entry header is `Spoločný záznam za N úlohy:` (`úloh` from five
+  tasks, `Shared entry for N tasks:` for English) — no minutes. Each line is
+  `(<id>) <short label> — <what the QA showed>`; the short label is the task's code (the text
+  before the first ` — `, when it is one word) or the title cut to about 40 characters
+  (`LABEL_DEF`, a jq definition safe for diacritics), never the full title. The `Patrí sem
+  aj:` / `Also includes:` lines of the end-of-run `PATCH` use the same short label.
+- Step 9.1 (b) and the description tone: `DONE` is one short sentence of about 10–12 words
+  with no minutes; the examples show the new shape.
+- References to the rules are now `wame-time-logging-v2`.
+
 ## [1.6.1] — 2026-10-20
 
 Task ids in a time-entry description are written in parentheses, `(45504762)`, the
